@@ -13,6 +13,7 @@ end
 require_relative "handle_table"
 require_relative "dom_interfaces"
 require_relative "constructor_registry"
+require_relative "custom_elements"
 require_relative "host_bridge"
 require_relative "quickjs/backend"
 require_relative "quickjs/runtime"

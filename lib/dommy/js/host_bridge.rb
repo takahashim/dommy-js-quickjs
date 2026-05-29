@@ -37,6 +37,7 @@ module Dommy
         @handles = HandleTable.new
         @callback_objects = {}
         @constructors = ConstructorRegistry.new
+        @custom_elements = CustomElements.new(self)
         install!
       end
 
@@ -47,11 +48,20 @@ module Dommy
         obj
       end
 
-      # Set the window that supplies JS constructors (new Event(...) etc.). Called
-      # by Runtime#install_window — kept distinct from define_host_object so the
-      # generic binder has no hidden side effects.
-      def constructor_source=(win)
+      # Bind the window the bridge draws on for JS constructors (new Event(...))
+      # and custom element registration. Called by Runtime#install_window — kept
+      # distinct from define_host_object so the generic binder has no hidden
+      # side effects.
+      def window=(win)
         @constructors.source = win
+        @custom_elements.window = win
+      end
+
+      # Invoke a JS custom element lifecycle callback (connectedCallback etc.) for
+      # a Dommy node. Called by the bridged custom element class (see CustomElements).
+      def invoke_lifecycle(node, callback, args)
+        handle = @handles.register(node)
+        @backend.call_js("__rbHost.invokeLifecycle", handle, callback, wrap(Array(args)))
       end
 
       # Invoke a retained live JS function by id (used by HostCallback).
@@ -78,17 +88,23 @@ module Dommy
           wrap(host(handle).__js_get__(prop))
         end
         @backend.define_host_function("__rb_host_set") do |handle, prop, value|
-          host(handle).__js_set__(prop, unwrap(value))
-          nil
+          # Returns whether Dommy handled the write as a DOM property. When it
+          # didn't, the JS side keeps the value as an expando (preserving the
+          # identity of object/instance fields on custom elements).
+          dommy_handled?(host(handle).__js_set__(prop, unwrap(value)))
         end
         @backend.define_host_function("__rb_host_call") do |handle, method, args|
           wrap(host(handle).__js_call__(method, unwrap(args)))
         end
-        @backend.define_host_function("__rb_host_methods") do |handle|
-          method_names(host(handle))
-        end
-        @backend.define_host_function("__rb_host_interface") do |handle|
-          DomInterfaces.info(host(handle))
+        # 2d: one call returns everything makeProxy needs — interface name +
+        # chain, method names, and the custom element tag (if any).
+        @backend.define_host_function("__rb_host_describe") do |handle|
+          obj = host(handle)
+          info = DomInterfaces.info(obj)
+          info["methods"] = method_names(obj)
+          # Mark JS-defined custom elements so makeProxy upgrades them on crossing.
+          info["ce"] = obj.__js_custom_element_name__ if obj.respond_to?(:__js_custom_element_name__)
+          info
         end
         @backend.define_host_function("__rb_release_handle") do |handle|
           @handles.release(handle)
@@ -100,6 +116,16 @@ module Dommy
         @backend.define_host_function("__rb_construct") do |name, args|
           ctor = @constructors.resolve(name)
           ctor ? wrap(ctor.__js_new__(unwrap(args))) : nil
+        end
+        # 1d: customElements.define(name, JSClass) wires a Dommy custom element.
+        @backend.define_host_function("__rb_define_custom_element") do |name, observed|
+          @custom_elements.define(name, Array(observed))
+          nil
+        end
+        # 1d: customElements.upgrade(root) — delegate to Dommy's registry.
+        @backend.define_host_function("__rb_upgrade_custom_elements") do |handle|
+          @custom_elements.upgrade(host(handle))
+          nil
         end
         @backend.eval(HOST_RUNTIME_JS)
         # Seed base interface prototypes from the single Ruby-side hierarchy.
@@ -157,6 +183,13 @@ module Dommy
         return [] unless obj.class.method_defined?(:__js_method_names__)
 
         Array(obj.__js_method_names__).map(&:to_s)
+      end
+
+      # Did Dommy treat a __js_set__ as a real DOM property? A returned UNHANDLED
+      # sentinel means "no" (the JS side then keeps it as an expando). Tolerant of
+      # older Dommy without the sentinel (treats everything as handled).
+      def dommy_handled?(result)
+        !(defined?(Dommy::Bridge::UNHANDLED) && result == Dommy::Bridge::UNHANDLED)
       end
     end
 

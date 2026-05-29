@@ -332,6 +332,199 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal "true,NotFoundError,nope,8", @rt.evaluate(js)
   end
 
+  # 1d: a JS `class extends HTMLElement` registered via customElements.define is
+  # upgraded onto a Dommy node. createElement yields an instance of the JS class
+  # (and of HTMLElement) — the construction-stack adoption end to end.
+  def test_custom_element_create_is_instance
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      globalThis.MyEl = class extends HTMLElement {};
+      customElements.define("my-el", MyEl);
+    JS
+    assert_equal true, @rt.evaluate('document.createElement("my-el") instanceof MyEl')
+    assert_equal true, @rt.evaluate('document.createElement("my-el") instanceof HTMLElement')
+    assert_equal "MY-EL", @rt.evaluate('document.createElement("my-el").tagName')
+  end
+
+  # connectedCallback fires when the element is attached, with `this` bound to the
+  # Dommy-backed node, so its DOM writes are visible from Ruby.
+  def test_custom_element_connected_callback
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      class MyEl extends HTMLElement {
+        connectedCallback() { this.textContent = "UP"; }
+      }
+      customElements.define("my-el", MyEl);
+      document.querySelector("#root").appendChild(document.createElement("my-el"));
+    JS
+    assert_equal "UP", @win.document.query_selector("my-el").text_content
+  end
+
+  # attributeChangedCallback fires for observed attributes after the constructor.
+  def test_custom_element_attribute_changed_callback
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      class MyEl extends HTMLElement {
+        static get observedAttributes() { return ["data-x"]; }
+        attributeChangedCallback(name, oldV, newV) { this.textContent = name + "=" + newV; }
+      }
+      customElements.define("my-el", MyEl);
+      const el = document.createElement("my-el");
+      document.querySelector("#root").appendChild(el);
+      el.setAttribute("data-x", "42");
+    JS
+    assert_equal "data-x=42", @win.document.query_selector("my-el").text_content
+  end
+
+  # An element already present in the parsed document is upgraded retroactively
+  # when its definition lands later (Dommy's upgrade_existing → JS construct +
+  # connectedCallback). No define-before-parse restriction needed.
+  def test_custom_element_upgrades_existing_node
+    win = Dommy.parse("<div id='host'><my-el></my-el></div>")
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(win)
+    rt.execute(<<~JS)
+      globalThis.MyEl = class extends HTMLElement {
+        connectedCallback() { this.textContent = "upgraded"; }
+      };
+      customElements.define("my-el", MyEl);
+    JS
+    assert_equal "upgraded", win.document.query_selector("my-el").text_content
+  ensure
+    rt&.dispose
+  end
+
+  # customElements.whenDefined stays pending until the name is defined, then
+  # resolves with the constructor (not an early resolve with undefined).
+  def test_custom_element_when_defined_pending
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      globalThis.__seen = "none";
+      customElements.whenDefined("x-late").then((c) => { globalThis.__seen = (c === globalThis.XLate) ? "ctor" : "other"; });
+      globalThis.XLate = class extends HTMLElement {};
+      customElements.define("x-late", XLate);
+    JS
+    assert_equal "ctor", @rt.evaluate("globalThis.__seen")
+  end
+
+  # customElements.upgrade delegates to Dommy's registry without error.
+  def test_custom_element_upgrade_delegates
+    @rt.install_window(@win)
+    assert_equal "ok", @rt.evaluate(<<~JS)
+      customElements.define("x-up", class extends HTMLElement {});
+      customElements.upgrade(document.querySelector("#root"));
+      return "ok";
+    JS
+  end
+
+  # customElements.get returns the registered constructor.
+  def test_custom_element_registry_get
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      globalThis.MyEl = class extends HTMLElement {};
+      customElements.define("my-el", MyEl);
+    JS
+    assert_equal true, @rt.evaluate('customElements.get("my-el") === MyEl')
+  end
+
+  # 2b: a node's sub-objects keep a stable identity across reads (Dommy returns
+  # the same Ruby object; the handle cache maps it to one proxy).
+  def test_sub_object_identity
+    js = 'const e = document.querySelector("#root"); return e.classList === e.classList && e.style === e.style;'
+    assert_equal true, @rt.evaluate(js)
+  end
+
+  # 2a: an HTMLCollection (el.children) crosses as an array-like proxy and is now
+  # iterable — for-of and spread work, not just indexed access.
+  def test_html_collection_is_iterable
+    @win.document.query_selector("#root").inner_html = "<h1>A</h1><p>B</p>"
+    js = <<~JS
+      const kids = document.querySelector("#root").children;
+      const out = [];
+      for (const c of kids) out.push(c.tagName);
+      return out.join(",") + "|" + [...kids].length;
+    JS
+    assert_equal "H1,P|2", @rt.evaluate(js)
+  end
+
+  # querySelectorAll already crosses as a real array (Dommy::NodeList < Array).
+  def test_query_selector_all_array_methods
+    @win.document.query_selector("#root").inner_html = "<h1>A</h1><p>B</p>"
+    assert_equal "H1,P",
+      @rt.evaluate('document.querySelectorAll("#root *").map(n => n.tagName).join(",")')
+  end
+
+  # (A) Node traversal is exposed: childNodes (live), firstChild, siblings.
+  def test_node_traversal
+    @win.document.query_selector("#root").inner_html = "<h1>A</h1>txt<!--c-->"
+    js = <<~JS
+      const root = document.querySelector("#root");
+      const types = [];
+      for (const n of root.childNodes) types.push(n.nodeType);
+      return [root.childNodes.length, types.join(""), root.firstChild.tagName,
+              document.querySelector("h1").nextSibling.nodeType].join("|");
+    JS
+    assert_equal "3|138|H1|3", @rt.evaluate(js)
+  end
+
+  # childNodes is a live NodeList: same object across reads, reflects mutation.
+  def test_child_nodes_live
+    root = @win.document.query_selector("#root")
+    root.inner_html = "<a></a>"
+    assert_equal true,
+      @rt.evaluate('document.querySelector("#root").childNodes === document.querySelector("#root").childNodes')
+    assert_equal 1, @rt.evaluate('document.querySelector("#root").childNodes.length')
+    root.append_child(@win.document.create_element("b"))
+    assert_equal 2, @rt.evaluate('document.querySelector("#root").childNodes.length')
+  end
+
+  # (B) A non-DOM property set on a node is kept as a JS-side expando, with
+  # object identity preserved — while real DOM properties still hit the DOM.
+  def test_expando_properties
+    js = <<~JS
+      const e = document.querySelector("h1");
+      e.count = 42;
+      e.obj = { nested: true };
+      e.id = "real";                 // a real DOM property
+      return [e.count, e.obj === e.obj, e.obj.nested, e.id, e.getAttribute("id")].join(",");
+    JS
+    assert_equal "42,true,true,real,real", @rt.evaluate(js)
+  end
+
+  # A class instance stored as a field keeps its methods (identity, not a copy).
+  def test_expando_instance_keeps_methods
+    js = <<~JS
+      class Ctrl { greet() { return "hi"; } }
+      const e = document.querySelector("h1");
+      e._ctrl = new Ctrl();
+      return e._ctrl.greet();
+    JS
+    assert_equal "hi", @rt.evaluate(js)
+  end
+
+  # (B) A framework-style reactive property (setter on the class prototype) runs
+  # instead of being swallowed by the DOM ABI.
+  def test_prototype_setter_wins
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      globalThis.XLit = class extends HTMLElement {
+        set label(v) { this._label = v; this.setAttribute("data-label", v); }
+        get label() { return this._label; }
+      };
+      customElements.define("x-lit", XLit);
+      const el = document.createElement("x-lit");
+      el.label = "hello";
+      globalThis.__r = [el.label, el.getAttribute("data-label")].join(",");
+    JS
+    assert_equal "hello,hello", @rt.evaluate("globalThis.__r")
+  end
+
+  # 2c: a method reference is stable for a given node (memoized per proxy), so
+  # identity comparisons frameworks sometimes make hold while you hold the node.
+  def test_method_identity
+    assert_equal true, @rt.evaluate('const e = document.querySelector("h1"); return e.getAttribute === e.getAttribute;')
+  end
+
   # Handles for transient proxies are released after GC, so the registry stays
   # bounded on a long-lived VM. Each queried <p> crosses to Ruby but is not
   # retained on the JS side, so it becomes collectable.

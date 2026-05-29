@@ -28,7 +28,7 @@ module Dommy
         # globals browsers expose.
         def install_window(win)
           define_host_object("window", win)
-          @bridge.constructor_source = win
+          @bridge.window = win
           @backend.eval(<<~JS)
             globalThis.setTimeout = (fn, delay) => window.setTimeout(fn, delay);
             globalThis.clearTimeout = (id) => window.clearTimeout(id);

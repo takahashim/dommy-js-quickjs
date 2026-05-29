@@ -22,11 +22,19 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
           methods: ["getAttribute"],
           props: { tagName: "BUTTON", textContent: "Click" },
           calls: { getAttribute: (args) => "cls:" + args[0] }
+        },
+        2: {
+          // a custom element node (flagged ce) backed like a plain HTMLElement
+          iface: { name: "HTMLElement",
+                   chain: ["HTMLElement", "Element", "Node", "EventTarget"], ce: "my-el" },
+          methods: [], props: {}, calls: {}
         }
       }
     };
-    globalThis.__rb_host_interface = (h) => __fakeHost.nodes[h].iface;
-    globalThis.__rb_host_methods = (h) => __fakeHost.nodes[h].methods;
+    globalThis.__rb_host_describe = (h) => {
+      const n = __fakeHost.nodes[h];
+      return { name: n.iface.name, chain: n.iface.chain, ce: n.iface.ce, methods: n.methods };
+    };
     globalThis.__rb_host_get = (h, prop) => {
       // own props only — like Dommy's __js_get__, which returns nil for
       // non-DOM names (constructor, toString, …) rather than leaking
@@ -34,12 +42,20 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
       const props = __fakeHost.nodes[h].props;
       return Object.hasOwn(props, prop) ? props[prop] : null;
     };
-    globalThis.__rb_host_set = (h, prop, val) => { __fakeHost.nodes[h].props[prop] = val; };
+    // Mirror Dommy: known DOM properties are handled (return true); anything
+    // else is "unhandled" (return false) so the host keeps it as an expando.
+    globalThis.__rb_host_set = (h, prop, val) => {
+      const KNOWN = new Set(["tagName", "textContent", "id", "className", "value"]);
+      if (!KNOWN.has(prop)) return false;
+      __fakeHost.nodes[h].props[prop] = val;
+      return true;
+    };
     globalThis.__rb_host_call = (h, m, args) => {
       const fn = __fakeHost.nodes[h].calls[m];
       return fn ? fn(args) : null;
     };
     globalThis.__rb_release_handle = (h) => { __fakeHost.released.push(h); };
+    globalThis.__rb_define_custom_element = () => {};   // JS-side registry is what matters here
     globalThis.__rb_construct = (name, args) => {
       if (name !== "CustomEvent") return null;            // others "not constructable"
       const h = __fakeHost.next++;
@@ -96,8 +112,25 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
     assert_equal "cls:x", js('return __rbHost.makeProxy(1).getAttribute("x");')
   end
 
+  # 2c: the method function is memoized per proxy (stable identity).
+  def test_proxy_method_identity
+    assert_equal true, js("const p = __rbHost.makeProxy(1); return p.getAttribute === p.getAttribute;")
+  end
+
   def test_proxy_set_roundtrip
     assert_equal "new", js('const p = __rbHost.makeProxy(1); p.textContent = "new"; return p.textContent;')
+  end
+
+  # A DOM property (handled by the host) does not leak onto the JS target as an
+  # own property; an unknown one is kept as an expando with identity preserved.
+  def test_expando_vs_dom_property
+    js_body = <<~JS
+      const p = __rbHost.makeProxy(1);
+      p.id = "real";                 // known -> host
+      p.thing = { n: 1 };            // unknown -> JS-side expando
+      return [Object.hasOwn(p, "id"), p.thing === p.thing, p.thing.n].join(",");
+    JS
+    assert_equal "false,true,1", js(js_body)
   end
 
   def test_proxy_identity
@@ -189,5 +222,31 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
       catch (e) { return e.message; }
     JS
     assert_equal "Event requires 'new'", js(js_body)
+  end
+
+  # --- 1d construction stack (Step 0 kernel, exercised through the real runtime) ---
+
+  # `class extends HTMLElement` + upgrade: the base constructor adopts the proxy
+  # on the construction stack, so the upgraded node is an instance of the JS
+  # class and of HTMLElement, and the JS constructor ran against it.
+  def test_construction_stack_upgrade
+    js_body = <<~JS
+      class MyEl extends HTMLElement {
+        connectedCallback() { return "connected"; }
+      }
+      customElements.define("my-el", MyEl);       // registers MyEl in the JS registry
+      const p = __rbHost.makeProxy(2);            // node 2 is flagged ce:"my-el"
+      return [p instanceof MyEl, p instanceof HTMLElement, typeof p.connectedCallback].join(",");
+    JS
+    assert_equal "true,true,function", js(js_body)
+  end
+
+  # Direct `new HTMLElement()` (no construction queued) is still illegal.
+  def test_base_constructor_illegal_without_upgrade
+    js_body = <<~JS
+      try { new HTMLElement(); return "no-throw"; }
+      catch (e) { return e instanceof TypeError; }
+    JS
+    assert_equal true, js(js_body)
   end
 end

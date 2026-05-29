@@ -20,7 +20,8 @@ module Dommy
         "Fragment" => "DocumentFragment",
         "ClassList" => "DOMTokenList",
         "DatasetMap" => "DOMStringMap",
-        "StyleDeclaration" => "CSSStyleDeclaration"
+        "StyleDeclaration" => "CSSStyleDeclaration",
+        "LiveNodeList" => "NodeList"
       }.freeze
 
       # Base interface chains seeded eagerly on the JS side so `instanceof Node`

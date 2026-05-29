@@ -250,6 +250,30 @@ dommy の既存機構に足すのは 2 点のみ:
    紐付け固定）。
 3. `super()` 前の field initializer 順、constructor 内 DOM 変更の reaction 再入（spec 上禁止、ガード可）。
 
+##### 実装状況（2026-05-30）
+
+Step 0〜3 まで実装・テスト済み（dommy 改変なし）:
+
+- **Step 0**: construction stack を quickjs で検証 → 全項目成立（instanceof / expando / backing / upgrade /
+  Illegal guard / requires-new）。`test_host_runtime.rb` に恒久ユニットテスト化。
+- **Step 1**: `customElements.define(name, JSClass)` → JS 側 `ceRegistry` 登録 ＋
+  `__rb_define_custom_element` で Dommy::HTMLElement サブクラス（shim）を `window.custom_elements` に登録。
+  `createElement` 由来ノードは `__rb_host_interface` の `ce` フラグ → `makeProxy` が初回クロス時に
+  `upgradeElement`（construction stack 採用）で JS クラス化。→ `instanceof MyEl/HTMLElement`、`tagName` 成立。
+- **Step 2**: shim の connected/disconnected/adopted/attributeChanged → `invoke_lifecycle` → JS
+  `invokeLifecycle(handle, cb)` → `this`=ノードproxy でコールバック実行。DOM 書込みが Ruby から観測可能。
+- **Step 3**: define-after-parse の遡及 upgrade も Dommy の `upgrade_existing` 経由で動作。
+  **F1（define-before-use 限定）は不要**だった。
+
+実装は `host_runtime.js`（construction stack / upgradeElement / invokeLifecycle / customElements 全域）と
+新コラボレータ `CustomElements`（shim 構築・登録）に局在。
+
+**expando / prototype アクセサ（2026-05-30 解決）**: 当初は catch-all Proxy の set が全書込みを ABI に
+流し、`this.foo=` の expando も Lit のリアクティブ setter も失われていた。**軸2 の B で解決**（下記参照）:
+プロパティ名の列挙に頼らず、**dommy が「未知キー」を `Bridge::UNHANDLED` で通知**→JS 側が target に
+expando として保持（**object/instance の identity も保持**）、**prototype 上の setter は set トラップより
+優先実行**（Lit 等）。DOM プロパティ（id/className/value/textContent…）は従来どおり dommy へ。
+
 ### 軸 2: セマンティクス / コスト層
 
 #### 2a. ライブコレクション
@@ -260,6 +284,19 @@ dommy の既存機構に足すのは 2 点のみ:
 
 > 規模: M / 1〜1.5 週。
 
+##### 実装状況（2026-05-30・部分）
+
+- `el.children`（`Dommy::HTMLCollection`）は dommy が `__js_get__("length")`/整数 index を公開済みで、
+  proxy 越しに `length`/`[i]`/`Array.from` が動作。**`Symbol.iterator` を array-like コレクション prototype
+  （HTMLCollection/DOMTokenList/NamedNodeMap/… ）に追加**し、`for-of`/スプレッドも可に。
+- `querySelectorAll` は `Dommy::NodeList < Array` なので wrap で**実 JS 配列**として渡り、`map`/`forEach`/
+  `for-of` がそのまま動作（追加実装不要）。
+- **トラバーサル公開（2026-05-30 解決・dommy 改修済み）**: dommy `Element#__js_get__` に `childNodes`
+  （**live NodeList**、`@live_child_nodes` でキャッシュし `===` 安定）/ `firstChild` / `lastChild` /
+  `nextSibling` / `previousSibling` / `childElementCount` / `lastElementChild` / `nextElementSibling` /
+  `previousElementSibling` を追加。`LiveNodeList` は `NodeList` へ名前マップ＋ array-like 反復可。
+  → Solid 系の template-walk（firstChild/nextSibling/comment マーカー）の前提が揃った。
+
 #### 2b. サブオブジェクト同一性
 
 `el.style === el.style`、`classList`、`dataset` が毎回新 proxy だと同一性が壊れる。
@@ -267,11 +304,42 @@ dommy の既存機構に足すのは 2 点のみ:
 
 > 規模: M / 0.5〜1 週。
 
+##### 実装状況（2026-05-30・解決済み）
+
+**追加実装不要だった**。dommy が `style`/`classList`/`dataset` で**同一 Ruby オブジェクトを返す**ため、
+HandleTable の object_id dedup ＋ makeProxy の handle キャッシュにより `el.style === el.style` 等が既に成立。
+テストで固定済み。
+
+#### 2f. expando / prototype アクセサ（2026-05-30 実装）
+
+1d の最大の制約だった「`this.foo=` の expando が永続しない / prototype setter が飲まれる」を、
+**プロパティ名の列挙なしで**解決:
+
+- **dommy**: `Element#__js_set__` が、未知キー（DOM プロパティでも on-handler でもないもの）に対し
+  `Bridge::UNHANDLED`（sentinel）を返す。`__rb_host_set` はこれを見て「dommy が処理したか」を真偽で JS へ返す。
+  → **dommy のロジック自体が権威**で、別途の property-name リスト（ドリフト源）を持たずに済む。
+- **bridge（host_runtime.js）**:
+  - get トラップ: target の **own プロパティ（=expando）を最優先**で返す（object/instance の identity 保持）。
+  - set トラップ: ① symbol→target、② **prototype 上に setter があれば `Reflect.set` で実行**（Lit 等の
+    リアクティブプロパティ）、③ それ以外は ABI へ。**dommy が未処理（false）なら target に expando 保存**。
+- これで `el.foo = {…}`（identity 保持）、`new Ctrl()` を field に保持（メソッド維持）、Lit 形式の
+  `set label(v)` 実行、`el.id="x"`（DOM へ）が全て両立。テスト済み。
+
+> 当初 1b で想定した「DOM プロパティを prototype アクセサ化（要・全プロパティ列挙）」までは行わず、
+> sentinel 方式で同等の正しさを軽量に達成した。完全な prototype-アクセサ化は性能/ WebIDL 強制が要る
+> 場面で再検討。
+
 #### 2c. メソッド / `this` 同一性
 
 メソッド参照のキャッシュ（フレームワークが稀に依存）。
 
 > 規模: S〜M / 0.5 週。
+
+##### 実装状況（2026-05-30 実装）
+
+makeProxy のクロージャに **per-proxy のメソッドメモ化（`methodCache`）** を追加 → 同じノードを保持して
+いる限り `el.foo === el.foo` が成立（要素を握っている前提＝現実のフレームワーク用法で安定）。
+別要素間（`a.foo === b.foo`）の同一性は保証しない（実用上ほぼ不要）。
 
 #### 2d. 性能
 
@@ -279,6 +347,15 @@ dommy の既存機構に足すのは 2 点のみ:
 バッチ/高速パス/メタデータキャッシュは需要次第。**初期は後回し**。
 
 > 規模: 可変。
+
+##### 実装状況（2026-05-30・初手）
+
+- **proxy 生成時のホスト呼び出しを 2→1 に統合**：`__rb_host_methods` ＋ `__rb_host_interface` を
+  廃し、`__rb_host_describe`（name / chain / methods / ce を一括返却）に。ノードがクロスする度の
+  ラウンドトリップが半減。
+- **メソッド集合をインターフェース名でキャッシュ（`methodsByInterface`）**：同一インターフェースの
+  2 個目以降の proxy は `Set` を再構築しない。
+- 残り（プロパティ read のバッチ化・marshalling 最適化等）は需要が出てから。
 
 #### 2e. WebIDL 強制 / 例外セマンティクス
 
