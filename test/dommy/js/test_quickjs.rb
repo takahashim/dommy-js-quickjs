@@ -525,6 +525,19 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal true, @rt.evaluate('const e = document.querySelector("h1"); return e.getAttribute === e.getAttribute;')
   end
 
+  # A function nested in an object (e.g. an event's detail) survives the round
+  # trip through Ruby and comes back callable — what Turbo's stream rendering
+  # (event.detail.render) relies on.
+  def test_function_in_event_detail_round_trips
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      globalThis.__r = "none";
+      document.addEventListener("ping", (e) => { globalThis.__r = (typeof e.detail.cb) + ":" + e.detail.cb(21); });
+      document.dispatchEvent(new CustomEvent("ping", { detail: { cb: (n) => n * 2 } }));
+    JS
+    assert_equal "function:42", @rt.evaluate("globalThis.__r")
+  end
+
   # Method-only host objects (no __js_get__ properties to call them out) are now
   # bridged and their methods are callable — previously these silently returned
   # non-functions because the objects lacked __js_method_names__.

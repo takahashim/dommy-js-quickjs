@@ -148,6 +148,10 @@ module Dommy
           value.map { |element| wrap(element) }
         when Hash
           value.transform_values { |element| wrap(element) }
+        when HostCallback
+          # A JS function that crossed into Ruby returns as the same live JS
+          # function (not a proxy), so callbacks nested in objects round-trip.
+          {"__rb_callback" => value.id}
         else
           if bridgeable?(value)
             {"__rb_handle" => @handles.register(value)}
@@ -209,6 +213,8 @@ module Dommy
     # ABI (__js_call__) — not #call/#handle_event — so Dommy's invoke_listener
     # routes through the __js_call__("call", [event]) branch.
     class HostCallback
+      attr_reader :id
+
       def initialize(bridge, id)
         @bridge = bridge
         @id = id
