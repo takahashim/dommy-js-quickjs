@@ -197,6 +197,141 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal true, @rt.evaluate("globalThis.raf")
   end
 
+  # 1a: interface metadata is exposed to JS via __rbHost.interfaceOf. An element
+  # reports its full DOM interface chain, most-derived first, up to EventTarget.
+  def test_interface_chain_for_element
+    js = '__rbHost.interfaceOf(document.querySelector(".primary")).chain.join(",")'
+    assert_equal "HTMLButtonElement,HTMLElement,Element,Node,EventTarget", @rt.evaluate(js)
+  end
+
+  def test_interface_name_is_most_derived
+    assert_equal "HTMLHeadingElement", @rt.evaluate('__rbHost.interfaceOf(document.querySelector("h1")).name')
+  end
+
+  # Dommy's class names (TextNode/CommentNode/CharacterDataNode/Fragment) are
+  # mapped to the WebIDL interface names (Text/Comment/CharacterData/
+  # DocumentFragment) via INTERFACE_NAME_OVERRIDES.
+  def test_interface_chain_for_text_node
+    js = 'return __rbHost.interfaceOf(document.createTextNode("hi")).chain.join(",");'
+    assert_equal "Text,CharacterData,Node,EventTarget", @rt.evaluate(js)
+  end
+
+  def test_interface_chain_for_comment_node
+    js = 'return __rbHost.interfaceOf(document.createComment("x")).chain.join(",");'
+    assert_equal "Comment,CharacterData,Node,EventTarget", @rt.evaluate(js)
+  end
+
+  def test_interface_chain_for_document_fragment
+    js = 'return __rbHost.interfaceOf(document.createDocumentFragment()).chain.join(",");'
+    assert_equal "DocumentFragment,Node,EventTarget", @rt.evaluate(js)
+  end
+
+  # The document itself: Document -> Node -> EventTarget.
+  def test_interface_chain_for_document
+    @rt.define_host_object("window", @win)
+    assert_equal "Document,Node,EventTarget",
+      @rt.evaluate("__rbHost.interfaceOf(window.document).chain.join(\",\")")
+  end
+
+  # interfaceOf on a plain (non-host) JS object is null — it only describes proxies.
+  def test_interface_of_non_proxy_is_null
+    assert_nil @rt.evaluate("__rbHost.interfaceOf({})")
+  end
+
+  # 1b: nodes are now real instances of their DOM interface constructors, with
+  # the full inheritance chain reachable via instanceof.
+  def test_instanceof_full_chain
+    js = <<~JS
+      const b = document.querySelector(".primary");
+      return [
+        b instanceof HTMLButtonElement,
+        b instanceof HTMLElement,
+        b instanceof Element,
+        b instanceof Node,
+        b instanceof EventTarget
+      ].join(",");
+    JS
+    assert_equal "true,true,true,true,true", @rt.evaluate(js)
+  end
+
+  # A button is not a Text node — sibling interfaces don't share a subtree.
+  def test_instanceof_negative
+    assert_equal false, @rt.evaluate('document.querySelector(".primary") instanceof Text')
+  end
+
+  # Text nodes climb Text -> CharacterData -> Node but are not Elements.
+  def test_instanceof_text_node
+    js = <<~JS
+      const t = document.createTextNode("hi");
+      return [t instanceof Text, t instanceof CharacterData, t instanceof Node, t instanceof Element].join(",");
+    JS
+    assert_equal "true,true,true,false", @rt.evaluate(js)
+  end
+
+  # Symbol.toStringTag flows from the interface prototype, so the brand string
+  # is the interface name (what testharness.js's assert_class_string checks).
+  def test_to_string_tag
+    assert_equal "[object HTMLHeadingElement]",
+      @rt.evaluate('Object.prototype.toString.call(document.querySelector("h1"))')
+  end
+
+  def test_constructor_name
+    assert_equal "HTMLButtonElement", @rt.evaluate('document.querySelector(".primary").constructor.name')
+  end
+
+  # Interface constructors exist as globals but are not directly constructable.
+  def test_interface_constructor_is_illegal
+    assert_equal "function", @rt.evaluate("typeof HTMLElement")
+    assert_equal true, @rt.evaluate(<<~JS)
+      try { new HTMLElement(); return false; } catch (e) { return e instanceof TypeError; }
+    JS
+  end
+
+  # Bridge sub-objects get their WebIDL interface names too.
+  def test_classlist_interface_name
+    assert_equal "DOMTokenList",
+      @rt.evaluate('document.querySelector("h1").classList[Symbol.toStringTag]')
+  end
+
+  # 1c: events can be constructed from JS with `new`, producing a real Dommy
+  # event reachable through the ABI and instanceof the right interfaces.
+  def test_new_custom_event
+    @rt.install_window(@win)
+    js = <<~JS
+      const e = new CustomEvent("greet", { detail: 42 });
+      return [e instanceof CustomEvent, e instanceof Event, e.type, e.detail].join(",");
+    JS
+    assert_equal "true,true,greet,42", @rt.evaluate(js)
+  end
+
+  def test_new_event_with_init
+    @rt.install_window(@win)
+    js = 'const e = new Event("x", { bubbles: true }); return [e instanceof Event, e.type, e.bubbles].join(",");'
+    assert_equal "true,x,true", @rt.evaluate(js)
+  end
+
+  # A JS-constructed event dispatches through Dommy to a JS listener: the same
+  # event instance arrives, carrying its detail.
+  def test_dispatch_js_constructed_event
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      const btn = document.querySelector(".primary");
+      btn.addEventListener("greet", (e) => { globalThis.got = e.detail; });
+      btn.dispatchEvent(new CustomEvent("greet", { detail: "hi" }));
+    JS
+    assert_equal "hi", @rt.evaluate("globalThis.got")
+  end
+
+  # DOMException isn't on the window but is still constructable, and is a proper
+  # JS error type (what testharness.js's assert_throws_dom relies on).
+  def test_new_dom_exception
+    js = <<~JS
+      const e = new DOMException("nope", "NotFoundError");
+      return [e instanceof DOMException, e.name, e.message, e.code].join(",");
+    JS
+    assert_equal "true,NotFoundError,nope,8", @rt.evaluate(js)
+  end
+
   # Handles for transient proxies are released after GC, so the registry stays
   # bounded on a long-lived VM. Each queried <p> crosses to Ruby but is not
   # retained on the JS side, so it becomes collectable.

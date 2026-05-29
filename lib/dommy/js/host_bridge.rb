@@ -13,6 +13,10 @@ module Dommy
     # Nothing here is QuickJS-specific; this layer is intended to move into a
     # future `dommy-js` gem with QuickJS/wasm backends plugged in underneath.
     #
+    # Two collaborators keep the marshalling core free of DOM specifics:
+    #   DomInterfaces       — interface name/chain derivation (instanceof support)
+    #   ConstructorRegistry — `new Event(...)` style reverse construction
+    #
     # Backend contract:
     #   backend.eval(js)                         -> evaluate top-level JS
     #   backend.define_host_function(name) { }   -> expose a Ruby block as a JS global
@@ -22,117 +26,17 @@ module Dommy
     # bridge needs to know which names are methods (callable via __js_call__)
     # vs. properties (read via __js_get__) — see #method_names.
     class HostBridge
-      # Built once per backend. Defines globalThis.__rbHost.{makeProxy,invokeCallback}.
-      # Values crossing the boundary are tagged: a bridge-able Ruby object is
-      # `{ __rb_handle: id }`, a JS function passed to Ruby is `{ __rb_callback: id }`.
-      HOST_RUNTIME_JS = <<~'JS'
-        globalThis.__rbHost = (function () {
-          const HKEY = Symbol("rbHandle");
-          const cache = new Map();            // handle -> WeakRef(proxy)
-          const callbacks = new Map();
-          const callbackIds = new WeakMap();
-          let nextCb = 1;
-
-          // When a proxy is garbage-collected, drop the Ruby-side handle entry
-          // (unless a live re-proxy for the same handle exists). Keeps the
-          // registry bounded on long-lived VMs. Handles are monotonic on the
-          // Ruby side, so a handle never refers to two different objects.
-          const finalizers = new FinalizationRegistry((handle) => {
-            const ref = cache.get(handle);
-            if (!ref || ref.deref() === undefined) {
-              cache.delete(handle);
-              __rb_release_handle(handle);
-            }
-          });
-
-          function isProxy(v) {
-            return v !== null && typeof v === "object" && v[HKEY] !== undefined;
-          }
-
-          // Same function -> same id, so addEventListener / removeEventListener
-          // round-trip to the same Ruby HostCallback (Dommy matches by identity).
-          function registerCallback(fn) {
-            if (callbackIds.has(fn)) return callbackIds.get(fn);
-            const id = nextCb++;
-            callbacks.set(id, fn);
-            callbackIds.set(fn, id);
-            return id;
-          }
-
-          // Called from Ruby when a host event dispatch reaches a JS-registered
-          // listener. The live function (closure intact) is invoked; tagged args
-          // (e.g. an Event handle) are rehydrated to proxies first.
-          function invokeCallback(id, args) {
-            const fn = callbacks.get(id);
-            if (!fn) return undefined;
-            return dehydrate(fn.apply(undefined, rehydrate(args || [])));
-          }
-
-          function dehydrate(v, seen) {
-            if (typeof v === "function") return { __rb_callback: registerCallback(v) };
-            if (isProxy(v)) return { __rb_handle: v[HKEY] };
-            if (v !== null && typeof v === "object") {
-              seen = seen || new WeakSet();
-              if (seen.has(v)) return undefined; // break reference cycles
-              seen.add(v);
-              if (Array.isArray(v)) return v.map((e) => dehydrate(e, seen));
-              const out = {};
-              for (const k of Object.keys(v)) out[k] = dehydrate(v[k], seen);
-              return out;
-            }
-            return v;
-          }
-
-          function rehydrate(v) {
-            if (Array.isArray(v)) return v.map(rehydrate);
-            if (v !== null && typeof v === "object") {
-              if ("__rb_handle" in v) return makeProxy(v.__rb_handle);
-              const out = {};
-              for (const k of Object.keys(v)) out[k] = rehydrate(v[k]);
-              return out;
-            }
-            return v;
-          }
-
-          function makeProxy(handle) {
-            const ref = cache.get(handle);
-            if (ref) {
-              const existing = ref.deref();
-              if (existing) return existing;
-            }
-            const methods = new Set(__rb_host_methods(handle));
-            const p = new Proxy({}, {
-              get(_t, prop) {
-                if (prop === HKEY) return handle;
-                if (typeof prop === "symbol") return undefined;
-                if (methods.has(prop)) {
-                  return function (...args) {
-                    return rehydrate(__rb_host_call(handle, prop, dehydrate(args)));
-                  };
-                }
-                return rehydrate(__rb_host_get(handle, prop));
-              },
-              set(_t, prop, value) {
-                if (typeof prop !== "symbol") {
-                  __rb_host_set(handle, prop, dehydrate(value));
-                }
-                return true;
-              },
-              has() { return true; }
-            });
-            cache.set(handle, new WeakRef(p));
-            finalizers.register(p, handle);
-            return p;
-          }
-
-          return { makeProxy, invokeCallback, tag: dehydrate };
-        })();
-      JS
+      # JS half of the bridge (globalThis.__rbHost). Read from a companion file
+      # so it stays lintable/highlightable rather than buried in a heredoc.
+      # ::File — inside module Dommy, bare `File` resolves to Dommy::File (the
+      # File API class), not Ruby's file class.
+      HOST_RUNTIME_JS = ::File.read(::File.join(__dir__, "host_runtime.js")).freeze
 
       def initialize(backend)
         @backend = backend
         @handles = HandleTable.new
         @callback_objects = {}
+        @constructors = ConstructorRegistry.new
         install!
       end
 
@@ -141,6 +45,13 @@ module Dommy
         handle = @handles.register(obj)
         @backend.eval("globalThis[#{name.to_s.to_json}] = __rbHost.makeProxy(#{handle}); undefined;")
         obj
+      end
+
+      # Set the window that supplies JS constructors (new Event(...) etc.). Called
+      # by Runtime#install_window — kept distinct from define_host_object so the
+      # generic binder has no hidden side effects.
+      def constructor_source=(win)
+        @constructors.source = win
       end
 
       # Invoke a retained live JS function by id (used by HostCallback).
@@ -176,11 +87,23 @@ module Dommy
         @backend.define_host_function("__rb_host_methods") do |handle|
           method_names(host(handle))
         end
+        @backend.define_host_function("__rb_host_interface") do |handle|
+          DomInterfaces.info(host(handle))
+        end
         @backend.define_host_function("__rb_release_handle") do |handle|
           @handles.release(handle)
           nil
         end
+        # `new Event(...)` / `new DOMException(...)` from a bare interface
+        # constructor — resolve the named constructor and build. Returns nil when
+        # the interface isn't constructable, so the JS side throws.
+        @backend.define_host_function("__rb_construct") do |name, args|
+          ctor = @constructors.resolve(name)
+          ctor ? wrap(ctor.__js_new__(unwrap(args))) : nil
+        end
         @backend.eval(HOST_RUNTIME_JS)
+        # Seed base interface prototypes from the single Ruby-side hierarchy.
+        @backend.eval("__rbHost.seedInterfaces(#{JSON.generate(DomInterfaces::BASE_CHAINS)});")
       end
 
       def host(handle)
