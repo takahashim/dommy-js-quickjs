@@ -525,6 +525,36 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal true, @rt.evaluate('const e = document.querySelector("h1"); return e.getAttribute === e.getAttribute;')
   end
 
+  # Method-only host objects (no __js_get__ properties to call them out) are now
+  # bridged and their methods are callable — previously these silently returned
+  # non-functions because the objects lacked __js_method_names__.
+  def test_history_pushstate
+    @rt.install_window(@win)
+    assert_equal "/x",
+      @rt.evaluate('window.history.pushState({}, "", "/x"); return window.location.pathname;')
+  end
+
+  def test_storage_methods
+    @rt.install_window(@win)
+    assert_equal "v",
+      @rt.evaluate('window.localStorage.setItem("k", "v"); return window.localStorage.getItem("k");')
+  end
+
+  def test_form_data_construct_and_use
+    @rt.install_window(@win)
+    assert_equal "1", @rt.evaluate('const f = new FormData(); f.append("a", "1"); return f.get("a");')
+  end
+
+  def test_html_collection_item_method
+    @win.document.query_selector("#root").inner_html = "<i>x</i><i>y</i>"
+    assert_equal "y", @rt.evaluate('document.querySelector("#root").children.item(1).textContent')
+  end
+
+  def test_url_construct
+    @rt.install_window(@win)
+    assert_equal "/p", @rt.evaluate('new URL("https://e.com/p?q=1").pathname')
+  end
+
   # Handles for transient proxies are released after GC, so the registry stays
   # bounded on a long-lived VM. Each queried <p> crosses to Ruby but is not
   # retained on the JS side, so it becomes collectable.

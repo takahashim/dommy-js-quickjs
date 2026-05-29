@@ -85,16 +85,19 @@ module Dommy
 
       def install!
         @backend.define_host_function("__rb_host_get") do |handle, prop|
-          wrap(host(handle).__js_get__(prop))
+          obj = host(handle)
+          wrap(obj.respond_to?(:__js_get__) ? obj.__js_get__(prop) : nil)
         end
         @backend.define_host_function("__rb_host_set") do |handle, prop, value|
           # Returns whether Dommy handled the write as a DOM property. When it
-          # didn't, the JS side keeps the value as an expando (preserving the
-          # identity of object/instance fields on custom elements).
-          dommy_handled?(host(handle).__js_set__(prop, unwrap(value)))
+          # didn't (or the object has no __js_set__), the JS side keeps the value
+          # as an expando (preserving object/instance field identity).
+          obj = host(handle)
+          obj.respond_to?(:__js_set__) ? dommy_handled?(obj.__js_set__(prop, unwrap(value))) : false
         end
         @backend.define_host_function("__rb_host_call") do |handle, method, args|
-          wrap(host(handle).__js_call__(method, unwrap(args)))
+          obj = host(handle)
+          obj.respond_to?(:__js_call__) ? wrap(obj.__js_call__(method, unwrap(args))) : nil
         end
         # 2d: one call returns everything makeProxy needs — interface name +
         # chain, method names, and the custom element tag (if any).
@@ -146,12 +149,21 @@ module Dommy
         when Hash
           value.transform_values { |element| wrap(element) }
         else
-          if value.respond_to?(:__js_get__)
+          if bridgeable?(value)
             {"__rb_handle" => @handles.register(value)}
           else
             value
           end
         end
+      end
+
+      # A value crosses as a proxy if it implements any of the bridge ABI — not
+      # only __js_get__: method-only objects (observers) and constructors expose
+      # __js_call__ / __js_new__ without properties.
+      def bridgeable?(value)
+        value.respond_to?(:__js_get__) ||
+          value.respond_to?(:__js_call__) ||
+          value.respond_to?(:__js_new__)
       end
 
       # JS -> Ruby: rebuild tagged handles / callbacks into Ruby objects.

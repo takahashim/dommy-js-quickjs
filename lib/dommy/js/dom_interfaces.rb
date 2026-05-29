@@ -44,7 +44,24 @@ module Dommy
         %w[CustomEvent Event],
         %w[MouseEvent Event],
         %w[KeyboardEvent Event],
-        %w[DOMException]
+        %w[DOMException],
+        # Window-exposed constructors that frameworks call bare (new X(...)).
+        # Seeding them creates the global; construction routes to the window.
+        %w[MutationObserver],
+        %w[IntersectionObserver],
+        %w[ResizeObserver],
+        %w[PerformanceObserver],
+        %w[AbortController],
+        %w[FormData],
+        %w[URL],
+        %w[Blob],
+        %w[File],
+        %w[FileList],
+        %w[Request],
+        %w[FileReader],
+        %w[XMLHttpRequest],
+        %w[TextEncoder],
+        %w[TextDecoder]
       ].freeze
 
       module_function
