@@ -10,14 +10,13 @@ gem "rake", "~> 13.0"
 
 gem "minitest", "~> 5.16"
 
-# Local development: use the working trees next to this gem.
-gem "quickjs", path: "/Users/maki/git/quickjs.rb"
-gem "dommy", path: "../dommy"
+# Local development: use the working trees from the dommy monorepo next door.
+gem "dommy", path: "../dommy/gems/dommy"
 
 # Dommy needs a parser backend at runtime; pick nokogiri for tests.
 gem "nokogiri"
 
 # Test-only: exercise the optional Capybara adapter end to end.
 gem "capybara"
-gem "capybara-dommy", path: "/Users/maki/git/capybara-dommy"
-gem "dommy-rack", path: "/Users/maki/git/dommy-rack"
+gem "capybara-dommy", path: "../dommy/gems/capybara-dommy"
+gem "dommy-rack", path: "../dommy/gems/dommy-rack"
