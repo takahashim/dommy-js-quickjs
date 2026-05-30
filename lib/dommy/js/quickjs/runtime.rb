@@ -88,6 +88,10 @@ module Dommy
         def install_browser_globals
           @backend.eval(<<~JS)
             globalThis.self = globalThis;
+            // Top-level window: parent/top are the window itself (spec), so
+            // frame-walking loops terminate instead of dereferencing undefined.
+            globalThis.parent = globalThis;
+            globalThis.top = globalThis;
             globalThis.location = window.location;
             globalThis.history = window.history;
             globalThis.navigator = window.navigator;
