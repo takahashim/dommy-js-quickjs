@@ -15,23 +15,23 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、WHATWG basic URL パーサー + Element *AttributeNS の後)
+## スナップショット (2026-05-30、URL パーサー + Element *AttributeNS + Attr 同一性の後)
 
 ```
-  dom       997/2261  (44.1%)
+  dom      1022/2261  (45.2%)
   url        91/109   (83.5%)
-  total    1088/2370  (45.9%)   — 9 ファイルが完全グリーン
+  total    1113/2370  (47.0%)   — 9 ファイルが完全グリーン
 ```
 
 セッション開始時の 108/2370 (4.6%) からの伸び。内訳:
 - URL コアの書き直し (下記) が `url` を 77.1%→83.5% に。`dom` には影響しない (url 専用)。
-- Element `*AttributeNS` の実装が `attributes.html` を **7→22/67** に上げ、`dom` を
-  982→997 に押し上げた (+15 = ちょうど attributes の増分)。
+- Element `*AttributeNS` の実装 + Attr ノード関連の修正一式が `attributes.html` を
+  **7→47/67** に上げ、`dom` を 982→1022 に押し上げた。
 
 残る `dom` の不足は `Document-createElementNS.html` (1/596) と
 `Document-createElement.html` (0/147) に集中しており、いずれも名前空間 / 大文字小文字 /
-バリデーション作業が必要。加えて `attributes.html` の残り (22/67、後述。大半はブリッジ側の
-NamedNodeMap/Attr ギャップ) と、雑多な `Element-classlist` のテール (~965/1420) がある。
+バリデーション作業が必要。加えて `attributes.html` の残り (47/67、後述) と、雑多な
+`Element-classlist` のテール (~965/1420) がある。
 
 ## Landed (2026-05-30 セッション)
 
@@ -54,16 +54,29 @@ NamedNodeMap/Attr ギャップ) と、雑多な `Element-classlist` のテール
   ようにした (サロゲートペア文字は先頭の 0xD800–0xDBFF ユニットで並ぶ)。同名は
   index タイブレークで安定 (Ruby の `sort_by` は安定でないため)。
   → urlsearchparams-sort 13/17 → **17/17**。
-- **Element `*AttributeNS`** (Dommy)。`getAttributeNS` / `setAttributeNS` /
-  `hasAttributeNS` / `removeAttributeNS` / `getAttributeNodeNS` /
-  `setAttributeNodeNS` を実装し、`__js_call__` に配線。新しい
-  `Internal::Namespaces.validate_and_extract` が WHATWG DOM の "validate and
-  extract" を実装 (NCName/QName 検証 → InvalidCharacterError、prefix と
-  namespace の整合性 → NamespaceError、`xml`/`xmlns` の特例)。両バックエンドが NS
-  ストレージを実装 (Nokogiri はフル NS、Nokolexbor は null 名前空間に縮退)。仕様の
-  「set an attribute value」修正も含む — 既存の (namespace, localName) 属性を別 prefix
-  で再 set したとき、値のみ変更し prefix は保持する (以前は prefix が変わっていた)。
-  → attributes.html **7→22/67**、dom 982→997。残りはブリッジ側ギャップ (後述)。
+- **Element `*AttributeNS` + Attr ノード一式** (Dommy)。attributes.html を
+  **7→47/67** に。内訳:
+  - `getAttributeNS` / `setAttributeNS` / `hasAttributeNS` / `removeAttributeNS` /
+    `getAttributeNodeNS` / `setAttributeNodeNS` を実装し `__js_call__` に配線。新しい
+    `Internal::Namespaces.validate_and_extract` が WHATWG DOM の "validate and
+    extract" を実装 (NCName/QName 検証 → InvalidCharacterError、prefix と namespace
+    の整合性 → NamespaceError、`xml`/`xmlns` の特例)。両バックエンドが NS ストレージを
+    実装 (Nokogiri はフル NS、Nokolexbor は null 名前空間に縮退)。(7→22)
+  - **set-an-attribute-value の prefix 保持**: 既存の (namespace, localName) 属性を
+    別 prefix で再 set したとき、値のみ変更し prefix は保持 (以前は prefix が変わって
+    いた)。
+  - **`Attr.textContent` / `Attr.specified`**: `Attr#__js_get__`/`__js_set__` に追加
+    (textContent は value を返す/書く、specified は常に true)。テストヘルパー
+    `attr_is` がこれらを参照するため大量の "(object) null" 失敗を解消。(22→34)
+  - **非 NS の `setAttribute`/`toggleAttribute` の空名チェック**: 空 qualifiedName で
+    InvalidCharacterError (corpus は空文字のみ無効を要求; `"0"`/`":"` 等は valid)。(34→36)
+  - **Attr ノードの同一性キャッシュ**: `NamedNodeMap` が `[namespace, localName]` を
+    キーに Attr インスタンスをキャッシュし、`el.attributes[i]` /
+    `getAttributeNode(NS)` がすべて同一オブジェクトを返す。`setAttributeNode(NS)` は
+    WHATWG "set an attribute" 準拠 (渡されたオブジェクトをそのまま採用、旧 Attr を
+    detach して返す、別要素にバインド済みなら InUseAttributeError)。`Element#
+    removeAttribute(NS)` は backend 削除の*前*に cached Attr を detach するので、保持
+    された参照は `ownerElement === null` になり値を保つ。(36→47)
 - **Promise thenable adoption** (ブリッジ + Dommy)。`HostBridge#invoke_callback` /
   `invoke_lifecycle` が戻り値を `unwrap` するようになり、JS の `.then` コールバックが
   返した Promise プロキシが生きた `PromiseValue` として戻る。また
@@ -128,29 +141,27 @@ URL の *コア* はもうボトルネックではない — パーサは純 Rub
   unknown type" マーシャリング — 上記) がボトルネックで、パーサではない。これらの修正が
   次に大きい `url` レバー (1 つの `promise_test` の裏に ~887 ケースが隠れている)。
 
-### Element `*AttributeNS` — ロジックは完了、ハーネスはブリッジ側でブロック
-- **AttributeNS のロジックは正しい** (純 Ruby で直接検証: get/set/has/remove、すべての
-  名前空間規則、validate-and-extract のエラー (NamespaceError / InvalidCharacterError)、
-  大文字小文字保持; dommy ユニットテスト 12/12 グリーン; prefix 保持バグを 1 件発見 &
-  修正)。attributes.html を 7→22/67 に上げた。
-- 残り 45 件の失敗は **大半がブリッジ側 / 非 NS のギャップ** であり、AttributeNS の
-  ロジックではない:
-  - **NamedNodeMap のインデックスアクセス + Attr ノードのインターフェース** (~30 件)。
-    多くのテストが `el.attributes[i]` / `.item(i)` を読むか、Attr ノードオブジェクト
-    (`getAttributeNode`/`setAttributeNode`/`removeAttributeNode` とその NS 版) を操作
-    し、ヘルパー `attr_is` で属性メタデータを検査する。これらが "(object) null"
-    (インデックスアクセスが null を返す) や "Node object of unknown type" (Attr ノードが
-    識別可能なインターフェースとしてマーシャルされない) で落ちる。これがブロッカーの主因。
-  - **非 NS の `setAttribute` / `toggleAttribute` の Name production バリデーション**
-    (2 件)。不正な Name で INVALID_CHARACTER_ERR を投げるべき (NS パスは
-    validate_and_extract が処理するが、非 NS パスは未検証)。
-  - **NamedNodeMap の own-property 列挙** (6 件)。`Object.getOwnPropertyNames(
-    el.attributes)` がインデックス名 (`["0","1",…]`) と qualified name を返すべき。
-    ブリッジ側のプロキシ own-property のギャップ。
-  - `document.implementation.createDocument` 未実装 (1 件)、`toggleAttribute` の順序 /
-    inline style の扱い等。
-- 言い換えると、NamedNodeMap の indexed/item 越境と Attr インターフェースのマーシャ
-  リングを実装すれば、AttributeNS のロジックはすでに正しいので大量に green に転じる。
+### Attributes (attributes.html 47/67 — 残り 20 件)
+Element `*AttributeNS`、Attr ノードの同一性、textContent/specified、空名検証は
+**完了** (Landed 参照)。残りは難度・リスクの高いものが中心:
+- **NamedNodeMap の own-property 列挙** (6 件)。`Object.getOwnPropertyNames(
+  el.attributes)` がインデックス (`"0".."n-1"`、enumerable) + qualified name
+  (non-enumerable) を返すべき。さらに HTML 文書中の HTML 要素では「全小文字の
+  qualified name のみ」を named property として公開するカーブアウトがある。ブリッジの
+  `makeHandler` に `ownKeys` + `getOwnPropertyDescriptor` トラップが無く、`getOwnProperty
+  Names(proxy)` が `[]` を返すのが原因。**全プロキシに影響する Proxy 不変条件のリスク**が
+  あるため、ホストが own-key リストを公開する仕組み (`__js_own_keys__` 等) を足して
+  慎重にテストする必要がある。
+- **同名属性が複数あるケース** (`First set attribute is returned` / `setAttribute should
+  set the first attribute …`、~6 件)。Nokogiri/HTML は要素ごとに同名属性を 1 つしか
+  持てないため、重複属性 (パース由来等) を表現できない。
+- **libxml2 の `xmlns` 特殊扱い** (1 件)。`setAttributeNS(XMLNS, "xmlns", …)` の
+  namespaceURI が取れない (libxml2 が名前空間宣言として扱う)。
+- **`removeAttribute` の qualifiedName 横断マッチング** (1-2 件)。`setAttributeNS("x",
+  "foo", …)` した属性を `removeAttribute("foo")` (qualifiedName 一致) で消す挙動 +
+  cached Attr の detach キー整合。
+- `document.implementation.createDocument` 未実装 (1 件)、inline style の toggle、
+  非 HTML 要素の大文字属性 (createElementNS の case 保持に依存) 等。
 
 ### `Element-classlist` の残り (965/1420)
 - liveness バグではない — `Dommy::ClassList` はすでに毎回 `class` 属性を新鮮に読む。
@@ -175,12 +186,6 @@ URL の *コア* はもうボトルネックではない — パーサは純 Rub
 - `Text`/`Comment`/`DocumentFragment`/`DocumentType` の `nodeName` は修正済み。残る
   Node-nodeName の失敗 1 件は外来名前空間の *要素* の大文字小文字で、上記の
   createElementNS 項目に属する。
-
-### Attributes (NamedNodeMap / Attr のブリッジ側)
-- `el.attributes[i]` / `.item(i)` のインデックスアクセスと Attr ノードのインターフェース
-  マーシャリング (上記 `*AttributeNS` 項目の主ブロッカー)。
-- 非 NS の `setAttribute` / `toggleAttribute` で不正 qualifiedName → `INVALID_CHARACTER_ERR`。
-- `getAttributeNames` の重複/名前空間付き属性のカウント。
 
 ### URLSearchParams (このセッション後の残り)
 - `sort` — **完了** (UTF-16 コードユニット順、安定; 17/17)。
