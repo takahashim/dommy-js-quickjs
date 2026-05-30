@@ -15,30 +15,45 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、WebIDL イベント辞書 + ライブコレクションの後)
+## スナップショット (2026-05-30、Encoding コーパス取り込みの後)
 
 ```
   dom      2199/2318  (94.9%)
   url      1390/1396  (99.6%)
-  total    3589/3714  (96.6%)   — 26 ファイルが完全グリーン
+  encoding  118/178   (66.3%)
+  total    3707/3892  (95.2%)   — 31 ファイルが完全グリーン
 ```
 
-> このバッチ (total 96.1%→**96.6%**、green 21→26):
-> - **B: WebIDL イベント引数/辞書変換** (ブリッジ + Dommy)。`Event-constructors` **8→14**、
->   `Event-initEvent` **9→12**、`CustomEvent` **2→3**、`AddEventListenerOptions-once` **3→4**
->   (4 ファイル green)。コンストラクタの type 必須/ToString 強制、init 辞書は宣言メンバーのみを
->   宣言順で読む (JS 側 `coerceConstructorArgs`)、イベントの未知プロパティ→undefined、
->   initEvent の dispatch 中 no-op + 引数必須、initCustomEvent、once は呼び出し前に除去、
->   `new Document()` 構築可能化。
-> - **C: ライブコレクション/イテレータ** (ブリッジ + Dommy)。`urlsearchparams-foreach` **2→6**
->   (green)、`Node-childNodes` **2→4**、`getElementsByClassName` **1→2**。array-like proxy が
->   インデックスを own プロパティ化 (`ownKeys`/`getOwnPropertyDescriptor`/`has` トラップ →
->   `hasOwnProperty(i)` が通る)、childNodes をキャッシュ済みライブ NodeList に
->   (Element/Fragment/Document)、keys/values/entries/Symbol.iterator を JS 側で本物の
->   イテレータに、URLSearchParams のイテレータを各 step で再読込するライブ版に。
+> **Encoding (`/encoding/`) を取り込み**。TextEncoder/TextDecoder は既存だったが、型付き配列
+> (Uint8Array/ArrayBuffer) がブリッジを綺麗に渡れず大半が落ちていた。**型付き配列マーシャリング
+> 層** (`Bridge::Bytes` ↔ Uint8Array)、WHATWG **UTF-8 デコーダのステートマシン** (streaming +
+> 正確な U+FFFD 配置 + fatal + EOF flush)、`encodeInto` (JS 側で destination を in-place 変更)、
+> 単独サロゲートの U+FFFD スクラブで encoding **4→118/178**。残り ~60 は ASCII/UTF-8 スコープ外
+> (SharedArrayBuffer 54 + Big5 + ArrayBuffer detach)。total % が 96.6%→95.2% に見かけ下がったのは
+> 範囲外 subtests を 178 件足したため (dom/url は不変)。
+>
+> 直前のバッチ (B: WebIDL イベント辞書 / C: ライブコレクション) は下記 Landed 参照。
+> Event-constructors 14/14・initEvent 12/12・CustomEvent 3/3・once 4/4・urlsearchparams-foreach
+> 6/6 が green、array-like proxy のインデックス own 化 + childNodes ライブ NodeList 化。
 
 ## Landed (2026-05-30 セッション)
 
+- **Encoding (`/encoding/`) 取り込み + 型付き配列マーシャリング** (ブリッジ + Dommy)。encoding
+  **4→118/178**、5 ファイル green (api-basics / api-surrogates-utf8 / textdecoder-fatal /
+  textdecoder-ignorebom / textencoder-utf16-surrogates)。(1) **型付き配列マーシャリング層**: JS の
+  ArrayBuffer / TypedArray は `dehydrate` で `{__rb_bytes:[…]}` に (従来は Object.keys で
+  index→値の Hash になり "no implicit conversion of Array into Integer")、Ruby 側は
+  `Bridge::Bytes`(< Array) に。逆向きは host が `Bytes` を返すと `rehydrate` が `new Uint8Array`
+  に。`TextEncoder#encode` が Uint8Array を返すように。(2) **WHATWG UTF-8 デコーダ** (Dommy
+  `text_codec.rb`): バイト単位のステートマシン (bytesNeeded/lower-upper boundary) で streaming
+  (`{stream:true}` 跨ぎの state)、正確な U+FFFD 配置 (`[0xF0,0x9F,0x41]`→"�A" 等)、
+  `fatal`→TypeError、EOF flush (不完全列は 1 個の U+FFFD)、BOM ストリップ/ignoreBOM を実装。
+  `fatal`/`ignoreBOM` 属性も公開。(3) **`encodeInto`** (ブリッジ JS 側): TextEncoder プロトタイプ
+  に定義し destination Uint8Array を in-place 変更 (host 往復ではコピーになるため)。スカラー値を
+  UTF-8 に、入りきらない code point の手前で停止、`{read, written}` を返す。(4) **単独サロゲートの
+  スクラブ** (ブリッジ): `dehydrate` が JS 文字列の unpaired surrogate を U+FFFD に置換 (Ruby 文字列は
+  lone surrogate を保持できないため、spec の USVString 変換と等価)。残り ~60 は ASCII/UTF-8 スコープ外
+  (SharedArrayBuffer は WebAssembly.Memory 依存・54 件、Big5、ArrayBuffer detach)。
 - **C: ライブコレクション / イテレータ** (ブリッジ + Dommy)。`urlsearchparams-foreach`
   **2→6/6 (green)**、`Node-childNodes` **2→4/6**、`Element-getElementsByClassName` **1→2/3**。
   (1) **array-like proxy の own-index 反映** (ブリッジ): `makeHandler` に `getOwnPropertyDescriptor`

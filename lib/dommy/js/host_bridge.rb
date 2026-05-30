@@ -210,6 +210,10 @@ module Dommy
         if defined?(Dommy::Bridge::UNDEFINED) && value.equal?(Dommy::Bridge::UNDEFINED)
           return {"__rb_undefined" => true}
         end
+        # A byte buffer crosses back as a JS Uint8Array.
+        if defined?(Dommy::Bridge::Bytes) && value.is_a?(Dommy::Bridge::Bytes)
+          return {"__rb_bytes" => value.to_a}
+        end
 
         case value
         when Array
@@ -252,6 +256,9 @@ module Dommy
           elsif value.key?("__rb_undefined")
             # A top-level JS `undefined` argument — distinct from JS null (nil).
             defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
+          elsif value.key?("__rb_bytes")
+            # A JS ArrayBuffer / TypedArray argument arrives as a byte buffer.
+            defined?(Dommy::Bridge::Bytes) ? Dommy::Bridge::Bytes.new(value["__rb_bytes"]) : value["__rb_bytes"]
           else
             value.transform_values { |element| unwrap(element) }
           end
