@@ -40,6 +40,38 @@
 
 ---
 
+## 実装状況サマリ（2026-05-30 時点）
+
+この設計に沿って **軸1（型システム）と軸2（セマンティクス）はほぼ実装完了**し、
+**実 `@hotwired/turbo` バンドルが dommy + quickjs 上で動作する**ところまで到達済み。
+
+**完了**
+- **軸1**: 1a インターフェースメタデータ公開 / 1b prototype 階層＋`instanceof`＋`Symbol.toStringTag` /
+  1c JS からの `new`（Event/CustomEvent/DOMException…）/ **1d JS 定義カスタム要素**
+  （construction stack による upgrade、connected/attributeChanged 等の lifecycle）。
+- **軸2**: 2a ライブ/反復可能コレクション（array-like＋entries-iterable）/ 2b サブオブジェクト同一性 /
+  2c メソッド同一性（per-proxy メモ化）/ 2d describe 統合・キャッシュ / 2f expando（identity 保持）＋
+  prototype setter 優先（Lit 形式）。
+- **実証**: 実 Turbo バンドルが import 時初期化を完了し、`Turbo.renderStreamMessage`
+  （turbo-stream append/prepend/update）と **turbo-frame 遅延ロード**（fetch→DOMParser→Range swap）が動作。
+- **診断・治具**: `Runtime#on_unhandled_rejection`（握り潰し rejection を backtrace 付きで surface）/
+  `on_log` / `install_browser_globals`（bare グローバル配線）/ `BrowserHarness`（env＋fetch スタブ＋
+  pump＋エラー/console 捕捉）。
+
+**この過程で見つけ・修正した実バグ**
+- construction stack の限定（非要素 `new` がスタック上の要素を奪う問題、`chain.includes("Node")` で限定）。
+- dehydrate/rehydrate のコールバック非対称（オブジェクト内ネスト関数が往復で壊れる）。
+- method-only ホストオブジェクトが橋渡しされない（`wrap` を `__js_call__`/`__js_new__` も対象に）。
+
+**残課題**
+- Turbo Drive 全体（リンク/フォーム→ナビゲーション）、Lit/Solid、WPT-JS ハーネス（適合率固定）。
+- dommy 側 `__js_method_names__` の網羅（現状は Turbo 経路で必要な分のみ）。
+- `callbacks` Map の無制限増加（長寿命 VM）、`fetch` のスタブ依存、expando の Element 限定。
+
+> 注: `install_browser_globals` / `BrowserHarness` 等の「軽量ブラウザ環境」は、当初 Stage 1/2 として
+> 構想したものが Runtime API ＋テスト治具として具体化した形。capybara-dommy ドライバ統合（Stage 2）への
+> 接続は今後。
+
 ## 2. 現状アーキテクチャと限界
 
 ### 2.1 現状
