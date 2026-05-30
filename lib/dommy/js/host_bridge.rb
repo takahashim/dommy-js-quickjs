@@ -56,8 +56,11 @@ module Dommy
         @constructors.source = win
         @custom_elements.window = win
         # Now that constructors are resolvable, expose their static methods
-        # (URL.createObjectURL, …) on the seeded interface globals.
+        # (URL.createObjectURL, …) on the seeded interface globals, and expose
+        # the constructors themselves on the window proxy (window.Node,
+        # document.defaultView.DOMException, …).
         @backend.call_js("__rbHost.attachStatics")
+        @backend.call_js("__rbHost.exposeConstructorsOnWindow")
       end
 
       # Invoke a JS custom element lifecycle callback (connectedCallback etc.) for
