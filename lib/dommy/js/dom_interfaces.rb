@@ -25,6 +25,32 @@ module Dommy
         "StandaloneEventTarget" => "EventTarget"
       }.freeze
 
+      # Concrete HTML element interfaces. A browser exposes every one of these as
+      # a global constructor whether or not an instance exists, so a framework's
+      # bare `instanceof HTMLInputElement` feature check resolves regardless of
+      # page content (idiomorph, Turbo's morph engine, probes `instanceof
+      # HTMLInputElement`/`HTMLTextAreaElement` during focus restoration even when
+      # the page has no such element). Each is a direct HTMLElement subclass
+      # except the two media leaves, appended with their chains below. Mirrors the
+      # `class HTMLxxxElement < HTMLElement` set in the dommy gem's html_elements.
+      HTML_LEAF_INTERFACES = %w[
+        HTMLAnchorElement HTMLAreaElement HTMLBaseElement HTMLBodyElement
+        HTMLBRElement HTMLButtonElement HTMLDataElement HTMLDetailsElement
+        HTMLDialogElement HTMLDivElement HTMLEmbedElement HTMLFieldsetElement
+        HTMLFormElement HTMLHeadElement HTMLHeadingElement HTMLHRElement
+        HTMLHtmlElement HTMLIFrameElement HTMLImageElement HTMLInputElement
+        HTMLLabelElement HTMLLegendElement HTMLLIElement HTMLLinkElement
+        HTMLMapElement HTMLMetaElement HTMLMeterElement HTMLModElement
+        HTMLObjectElement HTMLOListElement HTMLOptGroupElement HTMLOptionElement
+        HTMLOutputElement HTMLParagraphElement HTMLPictureElement HTMLPreElement
+        HTMLProgressElement HTMLQuoteElement HTMLScriptElement HTMLSelectElement
+        HTMLSlotElement HTMLSourceElement HTMLSpanElement HTMLStyleElement
+        HTMLTableCaptionElement HTMLTableCellElement HTMLTableElement
+        HTMLTableRowElement HTMLTableSectionElement HTMLTemplateElement
+        HTMLTextAreaElement HTMLTimeElement HTMLTitleElement HTMLTrackElement
+        HTMLUListElement
+      ].freeze
+
       # Base interface chains seeded eagerly on the JS side so `instanceof Node`
       # / `typeof HTMLElement` resolve before an instance of that exact type has
       # crossed. Concrete leaves (HTMLButtonElement, …) are built lazily from
@@ -62,7 +88,13 @@ module Dommy
         %w[NodeList], %w[HTMLCollection],
         # Traversal: NodeFilter exposes only [Constant]s (NodeFilter.SHOW_ELEMENT,
         # .FILTER_ACCEPT, …); TreeWalker/NodeIterator are instances.
-        %w[NodeFilter], %w[TreeWalker], %w[NodeIterator]
+        %w[NodeFilter], %w[TreeWalker], %w[NodeIterator],
+        # Concrete HTML element interfaces (see HTML_LEAF_INTERFACES) + the media
+        # subtree, so bare `instanceof HTMLInputElement` always resolves.
+        *HTML_LEAF_INTERFACES.map { |n| [n, "HTMLElement", "Element", "Node", "EventTarget"] },
+        %w[HTMLMediaElement HTMLElement Element Node EventTarget],
+        %w[HTMLAudioElement HTMLMediaElement HTMLElement Element Node EventTarget],
+        %w[HTMLVideoElement HTMLMediaElement HTMLElement Element Node EventTarget]
       ].freeze
 
       module_function
