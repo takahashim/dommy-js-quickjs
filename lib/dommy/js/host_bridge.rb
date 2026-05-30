@@ -64,12 +64,16 @@ module Dommy
       # a Dommy node. Called by the bridged custom element class (see CustomElements).
       def invoke_lifecycle(node, callback, args)
         handle = @handles.register(node)
-        @backend.call_js("__rbHost.invokeLifecycle", handle, callback, wrap(Array(args)))
+        unwrap(@backend.call_js("__rbHost.invokeLifecycle", handle, callback, wrap(Array(args))))
       end
 
-      # Invoke a retained live JS function by id (used by HostCallback).
+      # Invoke a retained live JS function by id (used by HostCallback). The JS
+      # side returns a `dehydrate`d (tagged) value, so unwrap it back to Ruby:
+      # a callback that returns e.g. a Promise proxy must come back as the live
+      # PromiseValue, otherwise Dommy can't adopt it (breaking
+      # `fetch().then(r => r.json()).then(…)` chains).
       def invoke_callback(id, args)
-        @backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)))
+        unwrap(@backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args))))
       end
 
       # Turn a JS-side tagged value (produced by __rbHost.tag) back into Ruby:
@@ -88,8 +92,10 @@ module Dommy
 
       def install!
         @backend.define_host_function("__rb_host_get") do |handle, prop|
-          obj = host(handle)
-          wrap(obj.respond_to?(:__js_get__) ? obj.__js_get__(prop) : nil)
+          dom_guard do
+            obj = host(handle)
+            wrap(obj.respond_to?(:__js_get__) ? obj.__js_get__(prop) : nil)
+          end
         end
         @backend.define_host_function("__rb_host_set") do |handle, prop, value|
           # Returns whether Dommy handled the write as a DOM property. When it
@@ -99,8 +105,10 @@ module Dommy
           obj.respond_to?(:__js_set__) ? dommy_handled?(obj.__js_set__(prop, unwrap(value))) : false
         end
         @backend.define_host_function("__rb_host_call") do |handle, method, args|
-          obj = host(handle)
-          obj.respond_to?(:__js_call__) ? wrap(obj.__js_call__(method, unwrap(args))) : nil
+          dom_guard do
+            obj = host(handle)
+            obj.respond_to?(:__js_call__) ? wrap(obj.__js_call__(method, unwrap(args))) : nil
+          end
         end
         # 2d: one call returns everything makeProxy needs — interface name +
         # chain, method names, and the custom element tag (if any).
@@ -120,8 +128,10 @@ module Dommy
         # constructor — resolve the named constructor and build. Returns nil when
         # the interface isn't constructable, so the JS side throws.
         @backend.define_host_function("__rb_construct") do |name, args|
-          ctor = @constructors.resolve(name)
-          ctor ? wrap(ctor.__js_new__(unwrap(args))) : nil
+          dom_guard do
+            ctor = @constructors.resolve(name)
+            ctor ? wrap(ctor.__js_new__(unwrap(args))) : nil
+          end
         end
         # Static/class methods on an interface constructor (URL.createObjectURL,
         # URL.parse, …): names to expose, and the dispatch.
@@ -130,8 +140,10 @@ module Dommy
           ctor.respond_to?(:__js_class_method_names__) ? ctor.__js_class_method_names__ : []
         end
         @backend.define_host_function("__rb_static_call") do |name, method, args|
-          ctor = @constructors.resolve(name)
-          ctor.respond_to?(:__js_call__) ? wrap(ctor.__js_call__(method, unwrap(args))) : nil
+          dom_guard do
+            ctor = @constructors.resolve(name)
+            ctor.respond_to?(:__js_call__) ? wrap(ctor.__js_call__(method, unwrap(args))) : nil
+          end
         end
         # 1d: customElements.define(name, JSClass) wires a Dommy custom element.
         @backend.define_host_function("__rb_define_custom_element") do |name, observed|
@@ -150,6 +162,18 @@ module Dommy
 
       def host(handle)
         @handles.fetch(handle)
+      end
+
+      # Run a host-function body, converting a raised Dommy::DOMException into a
+      # tagged marker that the JS side (rehydrate) re-throws as a real
+      # DOMException (name + legacy code, `instanceof DOMException`). Otherwise
+      # the quickjs gem flattens it to a plain Error — no name/code — which
+      # breaks `assert_throws_dom` and every DOM error contract (removeChild
+      # NotFoundError, classList SyntaxError/InvalidCharacterError, …).
+      def dom_guard
+        yield
+      rescue Dommy::DOMException => e
+        {"__rb_exception__" => {"name" => e.name, "message" => e.message, "code" => e.code}}
       end
 
       # Ruby -> JS: tag bridge-able objects so the JS side can proxy them.
