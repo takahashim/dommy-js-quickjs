@@ -579,15 +579,18 @@ class Dommy::Js::TestQuickjs < Minitest::Test
   end
 
   # Handles for transient proxies are released after GC, so the registry stays
-  # bounded on a long-lived VM. Each queried <p> crosses to Ruby but is not
-  # retained on the JS side, so it becomes collectable.
+  # bounded on a long-lived VM. While the queried <p> nodes are referenced
+  # JS-side their handles stay registered; once the references are dropped they
+  # become collectable. (The nodes are held in `__held` first so the growth is
+  # observed deterministically, before any GC can reclaim them.)
   def test_handles_released_after_gc
     @win.document.body.inner_html = "<p>a</p>" * 20 + @win.document.body.inner_html
     base = @rt.registered_count
-    20.times { |i| @rt.execute("document.querySelectorAll('p')[#{i}].textContent;") }
+    @rt.execute("globalThis.__held = Array.from(document.querySelectorAll('p'));")
     grew = @rt.registered_count
     assert_operator grew, :>, base, "querying nodes should register handles"
 
+    @rt.execute("globalThis.__held = null;")
     @rt.collect_garbage
     assert_operator @rt.registered_count, :<, grew, "GC should release transient handles"
   end

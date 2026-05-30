@@ -15,13 +15,18 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、… + undefined/null 区別 + Node.isEqualNode の後)
+## スナップショット (2026-05-30、… + Node.isEqualNode + dom/events 取り込みの後)
 
 ```
-  dom      1895/2261  (83.8%)
+  dom      1931/2318  (83.3%)
   url        97/109   (89.0%)
-  total    1992/2370  (84.1%)   — 14 ファイルが完全グリーン
+  total    2028/2427  (83.6%)   — 17 ファイルが完全グリーン
 ```
+
+> **コーパスを `dom/events` へ拡張** (基礎 11 ファイルを vendor、+57 subtests)。新規
+> ファイルを足したので見かけの total % は 84.1%→83.6% に微減したが、dom は 1897→1931 と
+> 増え、イベント伝播の系統的ギャップ (下記) を解消した。狭い集合での高 % より広い
+> カバレッジを優先。
 
 セッション開始時の 108/2370 (4.6%) からの伸び。内訳:
 - URL コアの書き直し (下記) が `url` を 77.1%→83.5% に。`dom` には影響しない (url 専用)。
@@ -43,16 +48,28 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 
 ## Landed (2026-05-30 セッション)
 
-- **Node.isEqualNode + DocumentType/PI/DOMImplementation** (Dommy)。
-  `Node-isEqualNode.html` **0→7/9**。`Internal::NodeEquality` が WHATWG の "equals"
-  (型別データ + 順序付き子孫の再帰比較) を実装し、`Node` モジュールの `is_equal_node`
-  から全ノードクラス (Element / CharacterData→Text・Comment / Fragment / Document /
-  DocumentType / ProcessingInstruction) に配線。比較はラッパーの公開アクセサ経由
-  (`__js_get__` の型別プロパティ + `child_nodes` + `attributes`) なので不均一なノード
-  クラス間で一様。あわせて: `DocumentType` に publicId/systemId、`document.implementation`
-  (`DOMImplementation#createDocumentType`)、`ProcessingInstruction` +
-  `document.createProcessingInstruction`。残り 2 (subtest 8/9) は
-  `implementation.createDocument`/`createHTMLDocument` (外来/XML 文書) 待ち。
+- **イベント伝播の WHATWG 準拠化 + Event 定数** (Dommy + ブリッジ)。`dom/events` を
+  取り込み 22→34/57。(1) `dispatch_event` を capturing→at-target→bubbling の3フェーズに
+  書き直し: 祖先パスを常に構築 (非 bubbling でも capture フェーズあり)、`eventPhase`
+  (NONE/CAPTURING/AT_TARGET/BUBBLING) を明示設定、capture リスナーは capturing 相、
+  非 capture は bubbling 相 (target では両方)、`stopPropagation` は `catch(:stop_…)` で
+  打ち切り。リスナー dedup を (listener, **capture**) に修正し、`addEventListener` の
+  3 引数 boolean / `{capture:}` を解釈。`EventTarget` に `__internal_event_parent__` の
+  既定 (nil) を追加し、`send`→`__send__` で XHR 等の `send` オーバーライドとの衝突を回避。
+  (2) **Event 定数** (`Event.CAPTURING_PHASE` 等) をブリッジの `INTERFACE_CONSTANTS` で
+  Event の interface オブジェクト+prototype に公開 (Node 定数と同機構)。(3) `Event#
+  returnValue` (= !defaultPrevented、setter で cancel) と `Event#isTrusted` (false) を追加。
+- **Node.isEqualNode + DOMImplementation 一式** (Dommy)。
+  `Node-isEqualNode.html` **0→9/9 (完全グリーン)**。`Internal::NodeEquality` が WHATWG の
+  "equals" (型別データ + 順序付き子孫の再帰比較) を実装し、`Node` モジュールの
+  `is_equal_node` から全ノードクラス (Element / CharacterData→Text・Comment / Fragment /
+  Document / DocumentType / ProcessingInstruction) に配線。比較はラッパーの公開アクセサ
+  経由 (`__js_get__` の型別プロパティ + `child_nodes` + `attributes`) なので不均一なノード
+  クラス間で一様。あわせて: `DocumentType` に publicId/systemId; `document.implementation`
+  (`DOMImplementation`) の `createDocumentType` / `createDocument` (独立 XML 文書、任意で
+  document element) / `createHTMLDocument` (doctype + html>head,body); `ProcessingInstruction`
+  + `document.createProcessingInstruction`; `Document#appendChild` (ドキュメント直下への
+  ノード追加)。
 - **ブリッジの undefined / null 区別** (ブリッジ + Dommy)。JS `undefined` と `null` が
   両方 Ruby `nil` に畳まれていたのを、トップレベルの呼び出し引数に限り区別:
   `dehydrateArgs` が明示的 `undefined` を `{__rb_undefined:true}` でタグ付け →
@@ -222,6 +239,17 @@ URL の *コア* はもうボトルネックではない — パーサは純 Rub
 
 大半は Dommy 側; ブリッジ側は明記する。
 
+### dom/events (34/57) — 伝播フェーズ + Event 定数は完了 (Landed)
+残り:
+- **`EventListenerOptions-capture` (0/4)**: options 辞書の `capture` getter の副作用回数、
+  `{capture:0}` 等の falsy 解釈、true/false の等価性 (dedup) の細部。
+- **`Event-constructors` (8/14)**: `new Event()` (型なし) は TypeError を投げるべき;
+  init 辞書の値強制変換のエッジ。
+- **`Event-initEvent` (9/12)**: `initEvent()` (引数なし) の throw、dispatch 中の no-op。
+- **`new Document()` / window をパスに含むケース** (各 dispatch テストの 2 件): Document の
+  コンストラクタ可能化、window をイベントターゲットとして登録/比較。
+- `Event-isTrusted` の descriptor 検査、`CustomEvent`/`AddEventListenerOptions-once` の各 1。
+
 ### URL コア — WHATWG basic URL パーサー — **完了** (Landed 参照)
 - Ruby-`URI` を `Internal::UrlParser` に置換; `urltestdata.json` で 887/887。
 - これ単体では解消しなかったもの: `url-constructor`/`url-origin` は依然 0/1。今は
@@ -306,11 +334,11 @@ window コンストラクタ + 検証 + iframe + 名前空間メタデータ + N
 
 ### インターフェース / より大きな機能 (優先度低)
 - `NodeList` インターフェースのシード (getElementsByClassName のインターフェースチェック)。
-- `implementation.createDocumentType` / `Node.isEqualNode` / `createProcessingInstruction`
-  は **完了** (Landed)。残るのは `implementation.createDocument` /
-  `createHTMLDocument` (外来/XML 文書を新規生成) — `Node-isEqualNode` の残り 2 subtest
-  + WPT の `dom/common.js` セットアップに必要。window に紐づかない独立 Document の構築 +
-  XML 文書セマンティクスが要る、やや大きめの機能。
+- `implementation.createDocumentType` / `createDocument` / `createHTMLDocument`、
+  `Node.isEqualNode`、`createProcessingInstruction` は **完了** (Landed; Node-isEqualNode
+  9/9)。`createDocument`/`createHTMLDocument` は window 非依存の独立 Document を生成する
+  ので、まだ vendor していない `dom/common.js` ベースのテスト群のセットアップ要件も
+  満たせるようになった (それらの追加 vendor は今後の作業)。
 - `DocumentFragment#childNodes` / `Document` ノードの dehydration / "Illegal
   constructor" — **ブリッジ側** の dehydration + インターフェースカバレッジ。
 - **Proxy `set` トラップが読み取り専用のホストゲッターを expando でシャドウする。** Dommy
