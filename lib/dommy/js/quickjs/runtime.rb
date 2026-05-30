@@ -131,6 +131,23 @@ module Dommy
             ]) {
               try { window[__n] = globalThis[__n]; } catch (__e) {}
             }
+            // Minimal WebAssembly.Memory: the engine provides a real
+            // SharedArrayBuffer but no WebAssembly, and WPT's `common/sab.js`
+            // derives the SAB constructor from
+            // `new WebAssembly.Memory({shared:true}).buffer.constructor`. A
+            // Memory whose `.buffer` is a SharedArrayBuffer is enough to let
+            // those tests (encodeInto, TextDecoder copy, …) exercise shared
+            // buffers with the real codec logic.
+            if (typeof globalThis.WebAssembly === "undefined" && typeof globalThis.SharedArrayBuffer === "function") {
+              globalThis.WebAssembly = {
+                Memory: function (opts) {
+                  const bytes = ((opts && opts.initial) || 0) * 65536;
+                  this.buffer = (opts && opts.shared)
+                    ? new SharedArrayBuffer(bytes)
+                    : new ArrayBuffer(bytes);
+                },
+              };
+            }
           JS
           self
         end

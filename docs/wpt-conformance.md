@@ -15,16 +15,29 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-31、querySelector セレクタ検証強化の後)
+## スナップショット (2026-05-31、encoding SharedArrayBuffer + ストリーミング BOM の後)
 
 ```
   dom        6788/7561  (89.8%)   — うち querySelector-All 1559/1977, Element-matches 536/672, dom/abort 34/37
   url        1390/1396  (99.6%)
-  encoding    118/178   (66.3%)
+  encoding    174/178   (97.8%)
   domparsing   68/100   (68.0%)
   html         64/95    (67.4%)
-  total      8428/9330  (90.3%)   — 96 ファイルが完全グリーン
+  total      8484/9330  (90.9%)   — 97 ファイルが完全グリーン
 ```
+
+> **encoding を 118→174/178 (97.8%) に +56** (encodeInto 56→110/111、textdecoder-copy 0→2、
+> encoding 全体 +56)。(1) **WebAssembly.Memory polyfill** (`runtime.rb` の
+> `install_browser_globals`): QuickJS は本物の `SharedArrayBuffer` を持つが `WebAssembly` が
+> 無く、WPT の `common/sab.js` は SAB コンストラクタを
+> `new WebAssembly.Memory({shared:true}).buffer.constructor` から導出する。`.buffer` が
+> SharedArrayBuffer の最小 Memory を生やすだけで、SAB を使う encodeInto/textdecoder-copy が
+> 本物のコーデックロジックで走る。(2) **SharedArrayBuffer の dehydrate** (`host_runtime.js`):
+> SAB は `instanceof ArrayBuffer` が false なので別途バイト列として渡す。(3) **ストリーミング BOM 除去
+> をバイトレベル→コードポイントレベルに** (`text_codec.rb` `decode_utf8`): BOM が複数の `decode()`
+> 呼び出しに跨る (EF BB → BF) と 3 バイト prefix チェックでは捕まらないので、デコード後に先頭 U+FEFF を
+> 除去する「BOM seen」フラグ方式に変更 (ストリーミング跨ぎで持続・flush でリセット)。残り 4 件は backend
+> 上限/範囲外 (ArrayBuffer detach ×2、Big5 ×2)。WebAssembly polyfill はグローバルだが回帰ゼロ。
 
 > **querySelector/matches/closest のセレクタ検証を強化 → +68 subtests** (querySelector-All 1505→1559、
 > Element-matches 522→536): (1) **引数なし → TypeError** (args.length で判定)、(2) **空文字列 →
