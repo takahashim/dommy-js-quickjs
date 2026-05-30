@@ -57,6 +57,10 @@
 - **診断・治具**: `Runtime#on_unhandled_rejection`（握り潰し rejection を backtrace 付きで surface）/
   `on_log` / `install_browser_globals`（bare グローバル配線）/ `BrowserHarness`（env＋fetch スタブ＋
   pump＋エラー/console 捕捉）。
+- **WPT-JS 適合性固定**: 本物の `testharness.js` を載せた `WptHarness`＋`WptRunner`
+  （`// META: script=` / `fetch("resources/…")` / `.html` のインライン `<script>` を解決）＋
+  `rake wpt:conformance`。url/dom コーパスで適合率をスナップショット化（詳細・ROI backlog は
+  `wpt-conformance.md`）。
 
 **この過程で見つけ・修正した実バグ**
 - construction stack の限定（非要素 `new` がスタック上の要素を奪う問題、`chain.includes("Node")` で限定）。
@@ -64,7 +68,7 @@
 - method-only ホストオブジェクトが橋渡しされない（`wrap` を `__js_call__`/`__js_new__` も対象に）。
 
 **残課題**
-- Turbo Drive 全体（リンク/フォーム→ナビゲーション）、Lit/Solid、WPT-JS ハーネス（適合率固定）。
+- Turbo Drive 全体（リンク/フォーム→ナビゲーション）、Lit/Solid。
 - dommy 側 `__js_method_names__` の網羅（現状は Turbo 経路で必要な分のみ）。
 - `callbacks` Map の無制限増加（長寿命 VM）、`fetch` のスタブ依存、expando の Element 限定。
 
