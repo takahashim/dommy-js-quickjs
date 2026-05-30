@@ -75,6 +75,33 @@ module Dommy
           self
         end
 
+        # Observe console.* output (see Backend).
+        def on_log(&block)
+          @backend.on_log(&block)
+          self
+        end
+
+        # Wire the bare browser globals frameworks reach for, aliased onto the
+        # installed window: self / location / history / navigator / storages /
+        # CSS / fetch / addEventListener / .... Call after install_window. This
+        # is what lets real frontend bundles (Turbo, …) run unmodified.
+        def install_browser_globals
+          @backend.eval(<<~JS)
+            globalThis.self = globalThis;
+            globalThis.location = window.location;
+            globalThis.history = window.history;
+            globalThis.navigator = window.navigator;
+            globalThis.sessionStorage = window.sessionStorage;
+            globalThis.localStorage = window.localStorage;
+            globalThis.CSS = window.CSS;
+            globalThis.fetch = (...args) => window.fetch(...args);
+            globalThis.addEventListener = (...args) => window.addEventListener(...args);
+            globalThis.removeEventListener = (...args) => window.removeEventListener(...args);
+            globalThis.dispatchEvent = (event) => window.dispatchEvent(event);
+          JS
+          self
+        end
+
         # Run JS GC then drain, so FinalizationRegistry cleanup callbacks fire and
         # release handles for proxies that are no longer referenced.
         def collect_garbage

@@ -45,6 +45,12 @@ module Dommy
           @vm.on_unhandled_rejection(&block)
         end
 
+        # Register a handler for console.(log|info|debug|warn|error). The block
+        # receives a log object (#severity / #to_s / #raw).
+        def on_log(&block)
+          @vm.on_log(&block)
+        end
+
         def run_gc
           @vm.gc!
         end
