@@ -37,6 +37,13 @@ module Dommy
         @harness = BrowserHarness.new(html, fetch_stub: fetch_stub, iframe_docs: iframe_docs)
         @harness.load_script(HARNESS)
         @harness.execute(<<~JS)
+          // We harvest results programmatically via add_completion_callback, so
+          // testharness's visual output is dead weight — and worse, it renders
+          // each subtest name into the DOM via document.createTextNode. WPT names
+          // embed the test input verbatim (URL cases carry literal NUL/control
+          // chars), and the libxml2-backed text node rejects null bytes, which
+          // would crash completion and zero out the whole file's results.
+          setup({ output: false });
           globalThis.__wptResults = null;
           add_completion_callback((tests) => {
             globalThis.__wptResults = tests.map((t) => ({ name: t.name, status: t.status, message: t.message }));

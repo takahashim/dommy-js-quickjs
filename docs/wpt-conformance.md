@@ -15,7 +15,20 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、… + Node.isEqualNode + dom/events 取り込みの後)
+## スナップショット (2026-05-30、url-constructor/url-origin データ供給の解消後)
+
+```
+  dom      1931/2318  (83.3%)
+  url      1386/1396  (99.3%)
+  total    3317/3714  (89.3%)   — 19 ファイルが完全グリーン
+```
+
+> **`url-constructor` / `url-origin` のデータ駆動ハーネスを解消** (下記 Landed)。両ファイルは
+> 1 つの `promise_test` の裏に ~1290 ケースを抱えており、ずっと 0/1 だった。3 つの修正で
+> url-constructor **888/888**、url-origin **401/401** が完全グリーンに。subtest 総数が
+> 2427→3714 に増えたのはこのため (隠れていたケースが顕在化した)。url は 89.0%→**99.3%**。
+
+### 旧スナップショット (Node.isEqualNode + dom/events 取り込みの後)
 
 ```
   dom      1931/2318  (83.3%)
@@ -48,6 +61,34 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 
 ## Landed (2026-05-30 セッション)
 
+- **`url-constructor` / `url-origin` のデータ供給を解消** (ハーネス + ブリッジ + Dommy)。
+  両ファイルは `fetch(urltestdata.json).json()` でコーパスを流し込み 1 つの `promise_test` で
+  ~1290 ケースを回すが、ずっと 0/1 だった。原因は 3 段の連鎖:
+  1. **testharness の DOM 出力が NUL でクラッシュ** (ハーネス)。完了時に testharness が各
+     subtest 名を `document.createTextNode` で DOM に描画するが、URL ケースのテスト名には
+     入力の NUL/制御文字がそのまま入る。libxml2 バックエンドの Text ノードは NUL を拒否
+     (`ArgumentError: string contains null byte`) → 完了処理ごと落ちてそのファイルの結果が
+     0 件になっていた。結果は `add_completion_callback` でプログラム的に回収しているので、
+     `WptHarness` 初期化で **`setup({ output: false })`** を呼び testharness の視覚出力を無効化。
+  2. **`Response#json` が lone surrogate を拒否** (Dommy `fetch.rb`)。`urltestdata-javascript-
+     only.json` は `\uD800` 等の単独サロゲートを含み、Ruby の `JSON.parse` が "invalid
+     surrogate pair" で例外 → `Promise.all` が reject → メイン 998 ケースが 1 件も走らない。
+     `scrub_lone_surrogates` を追加し、単独サロゲートのエスケープを U+FFFD に置換してから
+     parse (有効なペアはそのまま保持)。これは URL パーサが行う置換と等価で spec 準拠。
+  3. **URL コンストラクタが TypeError でなく DOMException を投げていた** (Dommy + ブリッジ)。
+     WHATWG では `new URL(bad)` / `url.href=bad` は **`TypeError`** を投げるが、Dommy は
+     `DOMException::SyntaxError` を投げ、`assert_throws_js(TypeError, …)` (instanceof 検査) が
+     275/276 件で失敗。`Dommy::Bridge::TypeError` (専用例外、bare な Ruby `TypeError` とは別物
+     なので本物の型バグをマスクしない) を新設し、URL の constructor/href= がこれを投げる
+     (`URL.parse`/`canParse`/`blob_inner_origin` の rescue も追従)。ブリッジは `dom_guard` で
+     これを捕捉し `{name:"TypeError", js_native:true}` でタグ付け → `makeHostError` が
+     `info.js_native` のとき本物の JS コンストラクタ (`new globalThis[name](msg)`) で再生成。
+  あわせて: blob URL の origin を内側スキームが http/https/file のときだけ内側 origin に
+  (それ以外は opaque origin) — `blob:ftp://`/`blob:ws://`/`blob:blob:https://` 系の 4 件。
+  URLSearchParams が **owner-backed (URL の query から初期化) のときは先頭 `?` を除去しない**
+  (`??a=b` の query "?a=b" は先頭 `?` がデータで最初の名前が "?a") — 1 件。
+  → url-constructor **0/1→888/888**、url-origin **0/1→401/401**、url **89.0%→99.3%**、
+  **total 83.6%→89.3% (3317/3714)**、19 ファイル green。dom は不変。
 - **イベント伝播の WHATWG 準拠化 + Event 定数** (Dommy + ブリッジ)。`dom/events` を
   取り込み 22→34/57。(1) `dispatch_event` を capturing→at-target→bubbling の3フェーズに
   書き直し: 祖先パスを常に構築 (非 bubbling でも capture フェーズあり)、`eventPhase`
@@ -217,23 +258,12 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
   `#cdata-section`)、`DocumentFragment`→`"#document-fragment"`、`DocumentType`→
   その name。→ Node-nodeName 1→5/6 (残り: 外来名前空間の要素の大文字小文字)。
 
-### `url-constructor` / `url-origin` は依然 0/1 (データ駆動ハーネスのギャップ)
-URL の *コア* はもうボトルネックではない — パーサは純 Ruby で `urltestdata.json` の
-887/887 を通す。この 2 ファイルが 0/1 のままなのは、ハーネスがそのコーパスをブリッジ
-経由で流し込めないため:
-
-1. **`Response#json` が lone surrogate を拒否する。** WPT の `urltestdata.json` には
-   `\uD800` のようなエスケープが含まれ、Ruby の `JSON.parse` が "invalid surrogate
-   pair" で例外を投げ、どのケースが走るより前に `promise_test` 全体を落とす。(Ruby の
-   UTF-8 文字列は lone surrogate を保持できないので要注意 — JS 側で parse するか、寛容な
-   デコーダが必要。)
-2. **マーシャリング: "Node object of unknown type"。** JSON ロードを越えても、
-   `promise_test` がブリッジからこれで reject する — fetch/デコードしたコーパスの行が
-   host↔JS 境界を綺麗に越えられていない。~887 件の constructor ケースがハーネス経由で
-   実際に走るには、この両方を解決する必要がある。
-
-(ここにあった歴史的なメモ — 「`Dommy::URL` は ~56% WHATWG 適合、496/887」 — は
-**解決済み**: Landed の WHATWG basic URL パーサーを参照。)
+### `url-constructor` / `url-origin` — **完了** (888/888 + 401/401、Landed 参照)
+かつて 0/1 だった原因 (testharness DOM 出力の NUL クラッシュ、`Response#json` の
+lone-surrogate、URL の TypeError マーシャリング) はすべて解消。当時メモしていた
+"Node object of unknown type" は、testharness が NUL 入りテスト名で createTextNode に
+失敗 → 完了処理が落ち、`promise_test` が壊れた object を reject していたもの (proxy の
+`has` トラップが全 true なので testharness が node と誤判定して整形) で、根本は上記 3 点。
 
 ## 残りのギャップバックログ (ROI 順)
 
