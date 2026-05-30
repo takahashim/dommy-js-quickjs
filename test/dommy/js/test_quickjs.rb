@@ -568,6 +568,16 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal "/p", @rt.evaluate('new URL("https://e.com/p?q=1").pathname')
   end
 
+  # Static/class methods on interface constructors (URL.parse / canParse / ...)
+  # are exposed on the bare global, delegating to the window's constructor.
+  def test_constructor_static_methods
+    @rt.install_window(@win)
+    assert_equal "function", @rt.evaluate("typeof URL.parse")
+    assert_equal true, @rt.evaluate('URL.canParse("https://example.com/")')
+    assert_equal false, @rt.evaluate('URL.canParse("not a url")')
+    assert_equal "/p", @rt.evaluate('URL.parse("https://example.com/p").pathname')
+  end
+
   # Handles for transient proxies are released after GC, so the registry stays
   # bounded on a long-lived VM. Each queried <p> crosses to Ruby but is not
   # retained on the JS side, so it becomes collectable.

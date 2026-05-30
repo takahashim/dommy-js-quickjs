@@ -55,6 +55,9 @@ module Dommy
       def window=(win)
         @constructors.source = win
         @custom_elements.window = win
+        # Now that constructors are resolvable, expose their static methods
+        # (URL.createObjectURL, …) on the seeded interface globals.
+        @backend.call_js("__rbHost.attachStatics")
       end
 
       # Invoke a JS custom element lifecycle callback (connectedCallback etc.) for
@@ -119,6 +122,16 @@ module Dommy
         @backend.define_host_function("__rb_construct") do |name, args|
           ctor = @constructors.resolve(name)
           ctor ? wrap(ctor.__js_new__(unwrap(args))) : nil
+        end
+        # Static/class methods on an interface constructor (URL.createObjectURL,
+        # URL.parse, …): names to expose, and the dispatch.
+        @backend.define_host_function("__rb_static_names") do |name|
+          ctor = @constructors.resolve(name)
+          ctor.respond_to?(:__js_class_method_names__) ? ctor.__js_class_method_names__ : []
+        end
+        @backend.define_host_function("__rb_static_call") do |name, method, args|
+          ctor = @constructors.resolve(name)
+          ctor.respond_to?(:__js_call__) ? wrap(ctor.__js_call__(method, unwrap(args))) : nil
         end
         # 1d: customElements.define(name, JSClass) wires a Dommy custom element.
         @backend.define_host_function("__rb_define_custom_element") do |name, observed|
