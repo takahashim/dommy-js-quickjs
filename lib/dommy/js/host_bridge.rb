@@ -63,6 +63,23 @@ module Dommy
         @backend.call_js("__rbHost.exposeConstructorsOnWindow")
       end
 
+      # Expose the seeded interface constructors (Element, Node, DOMException, …)
+      # on a secondary window object — an iframe's contentWindow — so cross-window
+      # `instanceof subWin.Element` and `subDoc.defaultView.DOMException` resolve
+      # to the same constructors the top window uses. Idempotent per window.
+      def expose_constructors_on(window_obj)
+        handle = @handles.register(window_obj)
+        # Retain the proxy in a JS-side registry: the constructors are defined as
+        # own properties on the proxy's target, so the proxy must stay alive (and
+        # keep its handle) — otherwise GC releases it and a later
+        # `iframe.contentWindow` rebuilds a fresh, constructor-less proxy.
+        @backend.eval(<<~JS)
+          (globalThis.__rbSubWindows ||= []).push(__rbHost.makeProxy(#{handle}));
+          __rbHost.exposeConstructorsOnWindow(globalThis.__rbSubWindows.at(-1));
+        JS
+        window_obj
+      end
+
       # Invoke a JS custom element lifecycle callback (connectedCallback etc.) for
       # a Dommy node. Called by the bridged custom element class (see CustomElements).
       def invoke_lifecycle(node, callback, args)

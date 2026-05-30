@@ -41,6 +41,13 @@ module Dommy
           win
         end
 
+        # Expose the seeded interface constructors on a secondary window (an
+        # iframe's contentWindow), so cross-window instanceof / defaultView work.
+        # Call after install_window (the constructors must already be seeded).
+        def expose_constructors_on(window_obj)
+          @bridge.expose_constructors_on(window_obj)
+        end
+
         # Run a script for side effects (no return value). Wrapped in an IIFE so
         # statements are allowed and the completion value is voided — otherwise a
         # trailing Promise expression would trip the gem's "unawaited Promise"

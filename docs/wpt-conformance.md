@@ -15,7 +15,29 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、url-constructor/url-origin データ供給の解消後)
+## スナップショット (2026-05-30、createElement 文書型 + classList 順序集合 + イベント伝播の後)
+
+```
+  dom      2185/2318  (94.3%)
+  url      1386/1396  (99.3%)
+  total    3571/3714  (96.1%)   — 21 ファイルが完全グリーン
+```
+
+> このバッチ (total 89.3%→**96.1%**):
+> - **createElement の文書型対応** が `Document-createElement.html` を **59→123/147** に。
+>   HTML 文書のみ小文字化、tagName 大文字化は「HTML 名前空間 かつ HTML 文書」のときだけ。
+>   iframe の XML/XHTML 文書を `content_type` で非 HTML 化し、各 iframe に専用の Window
+>   (constructor 公開) を与えた。
+> - **classList の順序付き集合化** が `Element-classlist.html` を **1235→1420/1420** (完全
+>   グリーン) に。DOMTokenList を重複排除した順序集合に (length/item/iteration)、indexed
+>   getter は範囲外で undefined、update steps は常に再シリアライズ (toggle の force no-op
+>   を除く)、replace の検証順を spec 準拠に。
+> - **イベント伝播フラグ + capture オプション** が `Event-propagation.html` を **4→7/7**
+>   (完全グリーン)、`EventListenerOptions-capture.html` を **0→2/4** に。dispatch 末尾で
+>   stop-propagation フラグをクリア、配信前にもフラグ確認、capture を JS truthiness で判定、
+>   removeEventListener を (callback, capture) でマッチ。
+
+### 旧スナップショット (url-constructor/url-origin データ供給の解消後)
 
 ```
   dom      1931/2318  (83.3%)
@@ -61,6 +83,42 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 
 ## Landed (2026-05-30 セッション)
 
+- **イベント伝播フラグ + capture オプション** (Dommy)。`Event-propagation.html` **4→7/7**、
+  `EventListenerOptions-capture.html` **0→2/4**。(1) dispatch 末尾で stop-propagation /
+  stop-immediate フラグをクリア (canceled フラグは保持) — 同じ Event を再 dispatch できる
+  ように。dispatch 前に立てた `stopPropagation()` は引き続き尊重。(2) `deliver_at` が配信
+  *前* にもフラグ確認 (祖先が無い AT_TARGET だけのケースでも pre-set フラグを尊重)。
+  (3) capture フラグを **JS truthiness** で判定 (`EventTarget.js_truthy?` / `.capture_flag`):
+  Ruby では `0`/`""` が truthy だが JS では falsy、`Bridge::UNDEFINED` センチネルも falsy。
+  `{capture:0}`/`undefined` third-arg を正しく非 capture に。(4) `remove_event_listener` が
+  `options` を取り (callback, capture) でマッチ (旧実装は callback だけで全削除) — 全
+  ディスパッチ箇所が `args[2]` を渡す。残り 2 (capture): dummy getter を読まない遅延 dict
+  変換 (Event-constructors と同根) と、GC 圧力下のコールバック ID 再利用による stale
+  capture リスナー (深いブリッジのライフサイクル問題)。
+- **createElement の文書型対応** (Dommy + ハーネス)。`Document-createElement.html`
+  **59→123/147**。createElement は HTML 文書のみ ASCII 小文字化し、HTML 名前空間
+  (HTML/XHTML 文書) か null 名前空間 (非 XHTML の XML 文書) を付与。`Element#tagName` は
+  「HTML 名前空間 **かつ** HTML 文書」のときだけ ASCII 大文字化 (XHTML 要素 = HTML 名前空間
+  だが XML 文書 → 大文字化しない)。`Document#html_document?` (content_type == "text/html")
+  を追加。`create_element` は名前空間メタデータを `__internal_set_namespace__` で保持し
+  localName/tagName/namespaceURI が一貫。ハーネス側: iframe の XML/XHTML 文書に
+  `content_type` を設定し (`text/xml` / `application/xhtml+xml`)、各 iframe に**専用の Window**
+  (`Dommy.parse` 産) を defaultView として与え、`Runtime#expose_constructors_on` で seed 済み
+  constructor を sub window proxy にも公開 (cross-window `instanceof` / `contentWindow.document`
+  が正しい sub 文書を返す)。ブリッジは sub window proxy を JS グローバル配列で保持し GC で
+  ハンドルが失われないようにする。残り ~24 は古い緩いケース (`f}oo`/先頭結合文字/`￿` —
+  XML Name production 的に無効で実ブラウザ/jsdom も落ちる、追わない)。
+- **classList を順序付き集合に** (Dommy)。`Element-classlist.html` **1235→1420/1420 (完全
+  グリーン)**。DOMTokenList の token set を「class 属性を ASCII 空白で分割し重複排除した
+  順序集合」に (`class_tokens` に `.uniq`) — length/item/iteration/contains が集合を見る
+  (`value`/`toString` は属性の生値)。indexed getter `classList[i]` は範囲外/負で `undefined`
+  (`item(i)` メソッドは null) を `Bridge::UNDEFINED` で返す。`update_tokens` は add/remove/
+  replace で**常に**集合を再シリアライズ (重複 collapse + 空白正規化) — 唯一の例外は「空集合
+  かつ属性が存在しない」で属性を作らない (空集合だが属性が在れば `""` を設定、削除しない)。
+  `toggle(token, force)` は force 一致の no-op では更新せず属性を不変に。`replace` の検証順を
+  spec 準拠に (両引数の空チェック→SyntaxError が両引数の空白チェック→InvalidCharacterError
+  より先、`replace(" ", "")` は SyntaxError)。dommy 側テスト 1 件を spec 準拠に更新
+  (最後のトークン削除は属性を `""` にする、削除しない)。
 - **`url-constructor` / `url-origin` のデータ供給を解消** (ハーネス + ブリッジ + Dommy)。
   両ファイルは `fetch(urltestdata.json).json()` でコーパスを流し込み 1 つの `promise_test` で
   ~1290 ケースを回すが、ずっと 0/1 だった。原因は 3 段の連鎖:

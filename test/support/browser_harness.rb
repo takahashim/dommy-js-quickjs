@@ -24,7 +24,7 @@ module Dommy
       def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil, iframe_docs: nil)
         @window = Dommy.parse(html)
         @window.__js_set__("__fetchy_stub__", fetch_stub) if fetch_stub
-        wire_iframe_documents(iframe_docs) if iframe_docs && !iframe_docs.empty?
+        @iframe_windows = iframe_docs && !iframe_docs.empty? ? wire_iframe_documents(iframe_docs) : []
         @runtime = Dommy::Js::Quickjs::Runtime.new
         @errors = []
         @logs = []
@@ -33,6 +33,10 @@ module Dommy
         @runtime.define_host_object("document", @window.document)
         @runtime.install_window(@window)
         @runtime.install_browser_globals
+        # Each iframe window is its own Window; expose the seeded constructors on
+        # it (after install_window has seeded them) so cross-window instanceof and
+        # `iframe.contentWindow.Element` / `.DOMException` resolve.
+        @iframe_windows.each { |w| @runtime.expose_constructors_on(w) }
       end
 
       def execute(js) = @runtime.execute(js)
@@ -69,17 +73,31 @@ module Dommy
 
       # Populate each `<iframe src=...>` whose src maps to provided markup with a
       # parsed nested document, so `iframe.contentDocument` resolves (WPT tests
-      # that exercise XML/XHTML documents via dummy iframes). The nested doc's
-      # defaultView is the top window, so `doc.defaultView.DOMException` etc.
-      # resolve to the seeded constructors.
+      # that exercise XML/XHTML documents via dummy iframes). Each nested document
+      # gets its OWN window as `defaultView` (so `iframe.contentWindow.document`
+      # is the nested doc, not the top one) — the constructors are exposed on it
+      # separately. Returns the nested windows.
       def wire_iframe_documents(iframe_docs)
-        @window.document.query_selector_all("iframe").each do |iframe|
-          markup = iframe_docs[iframe.get_attribute("src")]
+        @window.document.query_selector_all("iframe").filter_map do |iframe|
+          src = iframe.get_attribute("src").to_s
+          markup = iframe_docs[src]
           next unless markup
 
           sub = Dommy.parse(markup)
-          sub.document.default_view = @window
+          sub.document.default_view = sub
+          # Reflect the resource's content type so the nested document reports
+          # the right "HTML document" status — XML/XHTML documents preserve
+          # element-name case (createElement / tagName), unlike HTML documents.
+          sub.document.content_type =
+            if src.end_with?(".xhtml")
+              "application/xhtml+xml"
+            elsif src.end_with?(".xml")
+              "text/xml"
+            else
+              sub.document.content_type
+            end
           iframe.__internal_set_content_document__(sub.document)
+          sub
         end
       end
     end
