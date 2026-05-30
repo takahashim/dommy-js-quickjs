@@ -63,6 +63,14 @@ module Dommy
         # Flip testharness's all_loaded so completion can fire, then drive async tests.
         @harness.execute('window.dispatchEvent(new Event("load"));')
         @harness.pump
+        # If some async_test never settled (e.g. a MutationObserver record we
+        # don't deliver), completion never fires and ALL results are lost. Drive
+        # the deterministic clock past testharness's harness timeout (10s) so its
+        # timeout fires — marking the stragglers TIMEOUT and running the
+        # completion callback — and the tests that DID finish are still harvested.
+        if @harness.evaluate("globalThis.__wptResults === null")
+          @harness.pump(rounds: 2, step_ms: 11_000)
+        end
         Array(@harness.evaluate("globalThis.__wptResults"))
           .map { |r| Result.new(r["name"], r["status"], r["message"]) }
       end

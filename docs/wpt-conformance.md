@@ -15,31 +15,47 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、Selectors コーパス取り込みの後)
+## スナップショット (2026-05-30、MutationObserver コーパス取り込みの後)
 
 ```
-  dom        4262/5005  (85.2%)
+  dom        4360/5138  (84.9%)
   url        1390/1396  (99.6%)
   encoding    118/178   (66.3%)
   domparsing   68/100   (68.0%)
-  total      5838/6679  (87.4%)   — 41 ファイルが完全グリーン
+  total      5936/6812  (87.1%)   — 44 ファイルが完全グリーン
 ```
 
-> **Selectors (`dom/nodes/` の querySelector/matches/closest 系) を取り込み**。最大の解錠は
-> **動的 iframe 読込のハーネス対応**: Selectors-API の包括スイート (Element-matches /
-> ParentNode-querySelector-All) は `iframe` を実行時生成し `onload` 内で全テストを定義するため、
-> 従来 0/0 だった。`WptRunner` が `frame.src=` 代入を検出して content を vendor、`BrowserHarness`
-> が pump 中に生成済み iframe を配線し `load` を発火 → Element-matches **0→522/672**、
-> querySelector-All **0→1505/1977** (~1900 subtests 解錠)。あわせて `:scope` 対応 (scope 疑似
-> ハンドラ + 文書から評価して子孫に絞る)、closest 書き直し、無効セレクタ→SyntaxError /
-> 未対応疑似→空マッチ、`DocumentFragment.ownerDocument`、`NodeList`/`HTMLCollection` の interface
-> シード。残りの大半は **Nokogiri の CSS パーサが CSS3 セレクタ (`[attr*=v]` / `[attr=v i]` 等) を
-> 解析できない**根本制約。dom が 2318→5005 subtests に増え % は見かけ下がったが絶対合格は +2062。
+> **MutationObserver (`dom/nodes/MutationObserver-*`) を取り込み** (17→98/133)。最大の解錠は
+> **ハーネスの強制 timeout**: 配信されないミューテーション (Range 操作等) で async_test が1つでも
+> ハングすると completion が発火せず**ファイル全体の結果が 0 件**になっていた。`WptHarness#run` が
+> pump 後に結果が null なら決定論クロックを testharness のタイムアウト (10s) 超まで進め、未完了
+> テストを TIMEOUT 扱いにして completion を発火 → 完了済みテストを回収 (再利用可能な汎用修正)。
+> あわせて CharacterData の `appendData`/`insertData`/`deleteData`/`replaceData`/`substringData`/
+> `length` (characterData レコード発火)、`observe()` のオプション検証 (`{}` や attributeOldValue+
+> attributes:false で `Bridge::TypeError`)、コールバックに `(records, observer)` を渡す。残り:
+> Range 操作のレコード (未配信)、record の nextSibling/addedNodes 詳細、`Node.normalize`、
+> パーサ挿入の document 監視、複数 observer の textContent タイミング。
 >
-> 直前: **DOM Parsing** (68/100)、**Encoding** (118/178)。下記 Landed 参照。
+> 直前: **Selectors** (querySelector-All 1505/1977 + Element-matches 522/672、動的 iframe 読込)、
+> **DOM Parsing** (68/100)、**Encoding** (118/178)。下記 Landed 参照。
 
 ## Landed (2026-05-30 セッション)
 
+- **MutationObserver 取り込み** (ハーネス + Dommy)。**17→98/133**、5 ファイル green (disconnect /
+  inner-outer / takeRecords / + attributes/characterData/sanity が大幅前進)。(1) **ハーネスの強制
+  timeout** (最大レバー、再利用可能): 配信されないミューテーション (Range 操作など) で async_test が
+  1つでもハングすると testharness の completion が発火せず**そのファイルの全結果が失われていた**
+  (childList/attributes/characterData/textContent が 0/0)。`WptHarness#run` が pump 後に
+  `__wptResults === null` なら決定論クロックを 11s×2 進め、testharness の harness-timeout (10s,
+  `setTimeout(()=>tests.timeout())`) を発火させて未完了テストを TIMEOUT 扱いにし completion を回す。
+  → 4 ファイルが 0/0 から復活。(2) **CharacterData メソッド** (Dommy): `Text`/`Comment` に
+  `appendData`/`insertData`/`deleteData`/`replaceData`/`substringData`/`length` を実装 (各変更は
+  `write_data` 経由で characterData レコードを発火、offset 範囲外は IndexSizeError)。(3) **observe()
+  検証** (Dommy): `attributes`/`characterData` の暗黙 true は companion (attributeOldValue/Filter/
+  characterDataOldValue) が**あり、かつメンバー省略時のみ**。明示 false + companion は `Bridge::TypeError`、
+  3 種いずれも無しも TypeError (JS TypeError にマーシャル)。(4) **コールバック引数**: `(records,
+  observer)` を渡す。残り: Range 操作のレコード未配信 (timeout)、record の nextSibling/addedNodes 詳細、
+  `Node.normalize`、パーサ挿入の document 監視、複数 observer の textContent 累積タイミング。
 - **Selectors (querySelector/matches/closest) 取り込み** (ハーネス + ブリッジ + Dommy)。
   Element-matches **0→522/672**、ParentNode-querySelector-All **0→1505/1977**、Element-closest
   **24→28/29**、querySelector-scope **0→4/4** (dom 2200→4262)。(1) **動的 iframe 読込**
