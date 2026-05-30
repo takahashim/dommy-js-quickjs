@@ -15,15 +15,23 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、MutationObserver コーパス取り込みの後)
+## スナップショット (2026-05-30、history (pushState/replaceState) 取り込みの後)
 
 ```
   dom        4360/5138  (84.9%)
   url        1390/1396  (99.6%)
   encoding    118/178   (66.3%)
   domparsing   68/100   (68.0%)
-  total      5936/6812  (87.1%)   — 44 ファイルが完全グリーン
+  html          7/7    (100.0%)
+  total      5943/6819  (87.2%)   — 51 ファイルが完全グリーン
 ```
+
+> **History API (pushState/replaceState) の自己完結サブセットを取り込み** (7/7 green)。
+> history/location の WPT は大半が navigation (back/forward/popstate)・実 iframe・cross-origin
+> 依存で no-network・単一文書の Dommy では本質的に動かせない。自己完結する pushState/
+> replaceState の引数処理・state・cross-origin URL の SecurityError のみ vendor。`History#push`/
+> `replace` に **URL の origin チェック** (resolve 失敗 or cross-origin → SecurityError) を追加。
+> ナビゲーション/iframe 依存のもの (url_rewriting, *_url) は vendor しない。
 
 > **MutationObserver (`dom/nodes/MutationObserver-*`) を取り込み** (17→98/133)。最大の解錠は
 > **ハーネスの強制 timeout**: 配信されないミューテーション (Range 操作等) で async_test が1つでも
@@ -41,6 +49,13 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 
 ## Landed (2026-05-30 セッション)
 
+- **History API (pushState/replaceState) 自己完結サブセット** (Dommy)。
+  `the-history-interface` の自己完結テスト **7/7 green** (pushState/replaceState の基本・引数省略・
+  state・cross-origin SecurityError)。`History#push`/`replace` が URL を文書 URL に対して解決し、
+  parse 失敗 or **cross-origin なら SecurityError** を投げる (`resolve_url!`)。history/location の
+  WPT は大半が navigation (back/forward/popstate)・実 iframe・cross-origin 依存で、no-network・単一
+  文書の Dommy では本質的に動かせないため、それらは vendor しない (url_rewriting は iframe 生成 +
+  blob URL + origin ルール、numbered 001-012 は実ナビゲーション)。
 - **MutationObserver 取り込み** (ハーネス + Dommy)。**17→98/133**、5 ファイル green (disconnect /
   inner-outer / takeRecords / + attributes/characterData/sanity が大幅前進)。(1) **ハーネスの強制
   timeout** (最大レバー、再利用可能): 配信されないミューテーション (Range 操作など) で async_test が
