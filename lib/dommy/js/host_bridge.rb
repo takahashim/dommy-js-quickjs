@@ -120,9 +120,14 @@ module Dommy
         @backend.define_host_function("__rb_host_set") do |handle, prop, value|
           # Returns whether Dommy handled the write as a DOM property. When it
           # didn't (or the object has no __js_set__), the JS side keeps the value
-          # as an expando (preserving object/instance field identity).
-          obj = host(handle)
-          obj.respond_to?(:__js_set__) ? dommy_handled?(obj.__js_set__(prop, unwrap(value))) : false
+          # as an expando (preserving object/instance field identity). Wrapped in
+          # dom_guard so a throwing setter (e.g. `documentElement.outerHTML = …` →
+          # NoModificationAllowedError) crosses as a tagged exception the JS set
+          # trap re-throws, rather than escaping as a raw Ruby error.
+          dom_guard do
+            obj = host(handle)
+            obj.respond_to?(:__js_set__) ? dommy_handled?(obj.__js_set__(prop, unwrap(value))) : false
+          end
         end
         @backend.define_host_function("__rb_host_call") do |handle, method, args|
           dom_guard do

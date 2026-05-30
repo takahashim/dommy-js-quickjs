@@ -15,29 +15,52 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、Encoding コーパス取り込みの後)
+## スナップショット (2026-05-30、DOM Parsing/Serialization コーパス取り込みの後)
 
 ```
-  dom      2199/2318  (94.9%)
-  url      1390/1396  (99.6%)
-  encoding  118/178   (66.3%)
-  total    3707/3892  (95.2%)   — 31 ファイルが完全グリーン
+  dom        2200/2318  (94.9%)
+  url        1390/1396  (99.6%)
+  encoding    118/178   (66.3%)
+  domparsing   68/100   (68.0%)
+  total      3776/3992  (94.6%)   — 38 ファイルが完全グリーン
 ```
 
-> **Encoding (`/encoding/`) を取り込み**。TextEncoder/TextDecoder は既存だったが、型付き配列
-> (Uint8Array/ArrayBuffer) がブリッジを綺麗に渡れず大半が落ちていた。**型付き配列マーシャリング
-> 層** (`Bridge::Bytes` ↔ Uint8Array)、WHATWG **UTF-8 デコーダのステートマシン** (streaming +
-> 正確な U+FFFD 配置 + fatal + EOF flush)、`encodeInto` (JS 側で destination を in-place 変更)、
-> 単独サロゲートの U+FFFD スクラブで encoding **4→118/178**。残り ~60 は ASCII/UTF-8 スコープ外
-> (SharedArrayBuffer 54 + Big5 + ArrayBuffer detach)。total % が 96.6%→95.2% に見かけ下がったのは
-> 範囲外 subtests を 178 件足したため (dom/url は不変)。
+> **DOM Parsing & Serialization (`/domparsing/`) を取り込み** (29→68/100)。DOMParser /
+> innerHTML / outerHTML / insertAdjacentHTML はバックエンドパーサ上に既存だったので「計測 +
+> 補修」: insertAdjacentHTML の **位置文字列を case-insensitive** に + 挿入順 + 親なし→
+> NoModificationAllowedError (6→30/31)、**outerHTML setter を `__js_set__` に配線** + 値強制変換、
+> **set 経路を `dom_guard` で包む** (throwing setter の DOMException が JS に伝播するように。
+> 潜在バグ修正)、innerHTML/outerHTML の **[LegacyNullToEmptyString] ToString** を JS set トラップで、
+> **`compatMode`** (doctype 有無)、DOMParser の無効 enum → TypeError、**XML パース** (Nokogiri の
+> XML パーサ + `document_element` を `root` ベースに) + XMLSerializer を `to_xml` 化。残り: XMLSerializer
+> の名前空間アルゴリズム (25)、style 属性の CSS 直列化 (4)、Nokogiri のテキストノード結合/identity。
 >
-> 直前のバッチ (B: WebIDL イベント辞書 / C: ライブコレクション) は下記 Landed 参照。
-> Event-constructors 14/14・initEvent 12/12・CustomEvent 3/3・once 4/4・urlsearchparams-foreach
-> 6/6 が green、array-like proxy のインデックス own 化 + childNodes ライブ NodeList 化。
+> 直前: **Encoding** (118/178) — 型付き配列マーシャリング (`Bridge::Bytes`↔Uint8Array) + WHATWG
+> UTF-8 デコーダ + encodeInto + lone-surrogate scrub。残りは SAB/Big5/detach で範囲外。下記 Landed 参照。
 
 ## Landed (2026-05-30 セッション)
 
+- **DOM Parsing & Serialization (`/domparsing/`) 取り込み** (ブリッジ + Dommy)。**29→68/100**、
+  5 ファイル green (insert-adjacent / innerhtml-06 / innerhtml-li-autoclosing / outerhtml-01 /
+  domparser-spurious-attributes)。(1) **insertAdjacentHTML** (Dommy): 位置文字列を ASCII
+  case-insensitive に (`beforeBegin` 等が no-op していた — 6→30/31)、`add_previous_sibling` は
+  forward 反復で順序保持 (afterend のみ reverse)、無効位置→SyntaxError、親なし/親が Document の
+  beforebegin/afterend→NoModificationAllowedError。(2) **set 経路を `dom_guard` で包む** (ブリッジ):
+  `__rb_host_set` が DOMException を投げる setter (例 `documentElement.outerHTML=` →
+  NoModificationAllowedError) でタグ付き例外を返し、JS set トラップが re-throw — 従来は生 Ruby
+  例外が漏れていた潜在バグ。(3) **outerHTML setter** (Dommy): `Element#__js_set__` に `outerHTML`
+  を配線 (従来未処理 = expando 化していた)。(4) **[LegacyNullToEmptyString] ToString** (ブリッジ):
+  set トラップが innerHTML/outerHTML を JS 側で null→""、他は `String(value)` 強制 (`= 42` /
+  `{toString}` / throwing toString が正しく; innerhtml-07・outerhtml-02 完全グリーン)。
+  (5) **`compatMode`** (Dommy): doctype 有無で BackCompat/CSS1Compat。(6) **DOMParser の無効 enum**:
+  `Bridge::TypeError` (WebIDL enum)。(7) **XML パース/直列化** (Dommy): `Backend.parse_xml` (Nokogiri
+  XML パーサ) で `parseFromString(…, "text/xml")` が正しい XML 文書に、`document_element` を
+  `at_css("html")` から `nokogiri_doc.root` に (XML 文書の root を返す)、`XMLSerializer` を `to_xml`
+  ベースに (自己閉じ + XML エスケープ)。dommy 側テスト 3 件を spec 準拠に更新 (DOMParser enum →
+  TypeError、insertAdjacentHTML 親なし → throw)。残り: XMLSerializer の WHATWG 名前空間
+  シリアライズアルゴリズム (25、Nokogiri の to_xml は名前空間 prefix 管理が WHATWG と不一致)、
+  style 属性の CSS 直列化 (4)、Nokogiri が隣接テキストを結合する件 (insert_adjacent_html /
+  innerhtml-04 各 1)。
 - **Encoding (`/encoding/`) 取り込み + 型付き配列マーシャリング** (ブリッジ + Dommy)。encoding
   **4→118/178**、5 ファイル green (api-basics / api-surrogates-utf8 / textdecoder-fatal /
   textdecoder-ignorebom / textencoder-utf16-surrogates)。(1) **型付き配列マーシャリング層**: JS の
