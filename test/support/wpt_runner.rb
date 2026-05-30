@@ -27,11 +27,12 @@ module Dommy
 
       META_SCRIPT = /^\s*\/\/\s*META:\s*script=(\S+)/.freeze
       SCRIPT_TAG  = /<script\b([^>]*)>(.*?)<\/script>/mi.freeze
+      IFRAME_TAG  = /<iframe\b([^>]*)>/i.freeze
       # WPT uses both quoted and unquoted attributes (`src=../common.js`).
       SRC_ATTR    = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.freeze
       FETCH_CALL  = /\bfetch\(\s*["']([^"']+)["']/.freeze
 
-      Prepared = Struct.new(:html, :script, :fetch_stub, :missing_includes, keyword_init: true)
+      Prepared = Struct.new(:html, :script, :fetch_stub, :iframe_docs, :missing_includes, keyword_init: true)
 
       class << self
         def available? = WptHarness.available? && ::File.directory?(WPT_ROOT)
@@ -48,7 +49,7 @@ module Dommy
 
         def run(rel_or_abs)
           prepared = prepare(rel_or_abs)
-          wpt = WptHarness.new(prepared.html, fetch_stub: prepared.fetch_stub)
+          wpt = WptHarness.new(prepared.html, fetch_stub: prepared.fetch_stub, iframe_docs: prepared.iframe_docs)
           wpt.run(prepared.script)
         ensure
           wpt&.dispose
@@ -86,6 +87,7 @@ module Dommy
             html: DEFAULT_HTML,
             script: (includes + [source]).join("\n;\n"),
             fetch_stub: fetch_stub_for(source, dir),
+            iframe_docs: nil,
             missing_includes: missing
           )
         end
@@ -114,8 +116,24 @@ module Dommy
             html: source,
             script: (helpers + inline).join("\n;\n"),
             fetch_stub: fetch_stub_for(source, dir),
+            iframe_docs: iframe_docs_for(source, dir),
             missing_includes: missing
           )
+        end
+
+        # Map each `<iframe src=…>` to the markup of its src resource (when it
+        # exists on disk), so the harness can populate `iframe.contentDocument`.
+        def iframe_docs_for(source, dir)
+          docs = {}
+          source.scan(IFRAME_TAG) do |attrs,|
+            m = attrs.match(SRC_ATTR)
+            src = m && (m[1] || m[2] || m[3])
+            next unless src
+
+            file = resolve_include(src, dir)
+            docs[src] = ::File.read(file) if ::File.exist?(file)
+          end
+          docs.empty? ? nil : docs
         end
 
         # `/foo` is rooted at the WPT tree; anything else is relative to the

@@ -33,8 +33,8 @@ module Dommy
 
       def self.available? = ::File.exist?(HARNESS)
 
-      def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil)
-        @harness = BrowserHarness.new(html, fetch_stub: fetch_stub)
+      def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil, iframe_docs: nil)
+        @harness = BrowserHarness.new(html, fetch_stub: fetch_stub, iframe_docs: iframe_docs)
         @harness.load_script(HARNESS)
         @harness.execute(<<~JS)
           globalThis.__wptResults = null;

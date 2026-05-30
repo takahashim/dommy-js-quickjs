@@ -21,9 +21,10 @@ module Dommy
     class BrowserHarness
       attr_reader :window, :runtime, :errors, :logs
 
-      def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil)
+      def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil, iframe_docs: nil)
         @window = Dommy.parse(html)
         @window.__js_set__("__fetchy_stub__", fetch_stub) if fetch_stub
+        wire_iframe_documents(iframe_docs) if iframe_docs && !iframe_docs.empty?
         @runtime = Dommy::Js::Quickjs::Runtime.new
         @errors = []
         @logs = []
@@ -63,6 +64,24 @@ module Dommy
       end
 
       def dispose = @runtime&.dispose
+
+      private
+
+      # Populate each `<iframe src=...>` whose src maps to provided markup with a
+      # parsed nested document, so `iframe.contentDocument` resolves (WPT tests
+      # that exercise XML/XHTML documents via dummy iframes). The nested doc's
+      # defaultView is the top window, so `doc.defaultView.DOMException` etc.
+      # resolve to the seeded constructors.
+      def wire_iframe_documents(iframe_docs)
+        @window.document.query_selector_all("iframe").each do |iframe|
+          markup = iframe_docs[iframe.get_attribute("src")]
+          next unless markup
+
+          sub = Dommy.parse(markup)
+          sub.document.default_view = @window
+          iframe.__internal_set_content_document__(sub.document)
+        end
+      end
     end
   end
 end

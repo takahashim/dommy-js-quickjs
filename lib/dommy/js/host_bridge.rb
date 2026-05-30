@@ -183,6 +183,12 @@ module Dommy
       # Recurses Array and Hash so nested DOM nodes are tagged too (symmetric
       # with #unwrap).
       def wrap(value)
+        # A `__js_call__` may return the UNDEFINED sentinel for a void op; marshal
+        # it so the JS side yields `undefined` rather than `null`.
+        if defined?(Dommy::Bridge::UNDEFINED) && value.equal?(Dommy::Bridge::UNDEFINED)
+          return {"__rb_undefined" => true}
+        end
+
         case value
         when Array
           value.map { |element| wrap(element) }
