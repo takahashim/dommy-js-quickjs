@@ -15,12 +15,12 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、… + createElementNS 名前空間 + Node 定数の後)
+## スナップショット (2026-05-30、… + createElementNS 名前空間 + undefined/null 区別の後)
 
 ```
-  dom      1839/2261  (81.3%)
-  url        91/109   (83.5%)
-  total    1930/2370  (81.4%)   — 10 ファイルが完全グリーン
+  dom      1888/2261  (83.5%)
+  url        97/109   (89.0%)
+  total    1985/2370  (83.8%)   — 14 ファイルが完全グリーン
 ```
 
 セッション開始時の 108/2370 (4.6%) からの伸び。内訳:
@@ -33,14 +33,28 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 - **classList の void 戻り値 / 細部修正** が `Element-classlist.html` を
   **965→1235/1420** に。
 - **createElementNS の名前空間メタデータ** + **Document#childNodes** + **Node 定数**
-  (下記) が createElementNS を **316→486/596** に (dom 1666→1839)。
+  が createElementNS を **316→486/596** に。
+- **ブリッジの undefined/null 区別** (下記) が createElementNS を **486→534/596**、
+  url-statics-parse/canparse と urlsearchparams-delete/has を完全グリーンに
+  (dom→1888、url→97/109)。
 
-残る `dom` の不足は createElement の残り (58/147、非 NS の Name/XML セマンティクス)、
-createElementNS の残り (110、null/undefined 強制変換 + 緩い旧ケース)、`attributes.html`
-の残り (47/67)、classList の残り (~185)。
+残る `dom` の不足は classList の残り (~185)、createElementNS の残り (~62、緩い旧ケース
+中心)、createElement の残り (88/147)、`attributes.html` の残り (47/67)。
 
 ## Landed (2026-05-30 セッション)
 
+- **ブリッジの undefined / null 区別** (ブリッジ + Dommy)。JS `undefined` と `null` が
+  両方 Ruby `nil` に畳まれていたのを、トップレベルの呼び出し引数に限り区別:
+  `dehydrateArgs` が明示的 `undefined` を `{__rb_undefined:true}` でタグ付け →
+  `unwrap` が `Dommy::Bridge::UNDEFINED` センチネルに (`UNDEFINED` は symbol から
+  `to_s`→"undefined" の object に。void 戻り値と同じセンチネルを双方向で再利用)。
+  ネストした undefined (オプションバッグ等) は従来通り null のままで既存挙動を保護。
+  消費側: `URL`/`URL.parse`/`canParse` の base `undefined`→base なし;
+  `URLSearchParams#has`/`delete` の 2 番目 `undefined`→一引数形; `createElement(NS)` /
+  `createAttribute(NS)` の WebIDL DOMString 強制変換 (`undefined`→"undefined"、
+  `null`→"null"、namespace は nullable で `undefined`→null)。→ createElementNS
+  **486→534/596**、url-statics-parse/canparse と urlsearchparams-delete/has が完全
+  グリーン (total →**83.8%**、14 ファイル green)。
 - **createElementNS の名前空間 + Document#childNodes + Node 定数** (Dommy +
   ブリッジ)。`Document-createElementNS.html` **316→486/596** (dom 1666→1839、total
   →**81.4%**)。3 つの連鎖した修正:
@@ -265,17 +279,10 @@ window コンストラクタ + 検証 + iframe + 名前空間メタデータ + N
   イテレータプロトコル** (`.next()` ごとに Ruby へコールバックするステートフルな index)
   が必要で、単なる `ENTRIES_ITERABLES` では不十分。
 
-### 末尾の optional 引数での `undefined` vs `null` (ブリッジ) — 6 subtests に波及
-- `URL.parse("aaa:b", undefined)` / `URL.canParse("aaa:b", undefined)` は `undefined` を
-  「base なし」として扱うべき (→ parse 成功)、`has(name, undefined)` /
-  `delete(name, undefined)` は 1 引数形と同じ挙動になるべき。純 Ruby の `Dommy::URL` /
-  `URLSearchParams` は `nil` の base/value を正しく扱える; ギャップは、ブリッジが JS の
-  `undefined` と `null` の **両方** を Ruby `nil` にマーシャルすること (`dehydrate` が
-  primitive をそのまま返し、quickjs gem が両者を `nil` に畳む)。そのためディスパッチが
-  「不在」(`undefined`) と明示的な `null` 値 (WebIDL の USVString 変換で `"null"` になる)
-  を区別できない。修正には、ブリッジが `undefined` を区別して運ぶ仕組み (例えば
-  `dehydrate`/`unwrap` での `{__rb_undefined: true}` センチネル) が必要で、optional 引数の
-  ディスパッチが末尾の `undefined` を落とせるようにする。ブリッジ側; URL 以外にも波及。
+### `undefined` vs `null` (ブリッジ) — **完了** (Landed 参照)
+- `dehydrateArgs` + `Dommy::Bridge::UNDEFINED` センチネルでトップレベル引数の `undefined`
+  を `null` と区別。URL の base、`has`/`delete` の値、`createElement(NS)` の DOMString
+  強制変換に適用。url-statics + searchparams-delete/has が完全グリーンに。
 
 ### 計測 (後で、今はやらない)
 - **スコープを絞った `idlharness` 試行。** WPT の `idlharness.js` は WebIDL の正準的な

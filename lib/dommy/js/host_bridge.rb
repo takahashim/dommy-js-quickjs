@@ -227,6 +227,9 @@ module Dommy
           elsif value.key?("__rb_callback")
             id = value["__rb_callback"]
             @callback_objects[id] ||= HostCallback.new(self, id)
+          elsif value.key?("__rb_undefined")
+            # A top-level JS `undefined` argument — distinct from JS null (nil).
+            defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
           else
             value.transform_values { |element| unwrap(element) }
           end
