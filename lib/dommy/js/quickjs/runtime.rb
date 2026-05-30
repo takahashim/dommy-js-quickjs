@@ -36,7 +36,15 @@ module Dommy
             globalThis.clearInterval = (id) => window.clearInterval(id);
             globalThis.requestAnimationFrame = (fn) => window.requestAnimationFrame(fn);
             globalThis.cancelAnimationFrame = (id) => window.cancelAnimationFrame(id);
-            globalThis.queueMicrotask = (fn) => window.queueMicrotask(fn);
+            // queueMicrotask must share the engine's promise-job (microtask)
+            // queue so its callbacks are FIFO-ordered with Promise reactions
+            // (the WHATWG single-microtask-queue model). Routing through the
+            // Ruby scheduler instead would drain on a separate pass, reordering
+            // it after all native promise jobs.
+            globalThis.queueMicrotask = (fn) => {
+              if (typeof fn !== "function") throw new TypeError("queueMicrotask requires a function");
+              Promise.resolve().then(() => { fn(); });
+            };
           JS
           win
         end
@@ -109,6 +117,20 @@ module Dommy
             globalThis.addEventListener = (...args) => window.addEventListener(...args);
             globalThis.removeEventListener = (...args) => window.removeEventListener(...args);
             globalThis.dispatchEvent = (event) => window.dispatchEvent(event);
+            // The window IS the global object, so JS built-in constructors and
+            // namespaces are also `window` properties (`window.String`,
+            // `window.Number`, …). Mirror them as own props on the window proxy
+            // so code that reads constructors off `window` (e.g. the WPT
+            // reflection harness's `window[type]` casts) resolves them.
+            for (const __n of [
+              "String", "Boolean", "Number", "BigInt", "Symbol", "Object", "Array",
+              "Function", "Date", "RegExp", "Promise", "Map", "Set", "WeakMap",
+              "WeakSet", "Math", "JSON", "Reflect", "Proxy", "Error", "TypeError",
+              "RangeError", "SyntaxError", "Infinity", "NaN", "undefined",
+              "parseInt", "parseFloat", "isNaN", "isFinite", "globalThis",
+            ]) {
+              try { window[__n] = globalThis[__n]; } catch (__e) {}
+            }
           JS
           self
         end

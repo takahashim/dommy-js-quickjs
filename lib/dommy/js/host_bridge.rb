@@ -31,6 +31,9 @@ module Dommy
       # ::File — inside module Dommy, bare `File` resolves to Dommy::File (the
       # File API class), not Ruby's file class.
       HOST_RUNTIME_JS = ::File.read(::File.join(__dir__, "host_runtime.js")).freeze
+      # The WICG Observable polyfill (Observable/Subscriber + EventTarget.when),
+      # evaluated after the DOM interface prototypes are seeded.
+      OBSERVABLE_RUNTIME_JS = ::File.read(::File.join(__dir__, "observable_runtime.js")).freeze
 
       def initialize(backend)
         @backend = backend
@@ -38,6 +41,8 @@ module Dommy
         @callback_objects = {}
         @constructors = ConstructorRegistry.new
         @custom_elements = CustomElements.new(self)
+        @microtask_procs = {}
+        @microtask_seq = 0
         install!
       end
 
@@ -61,6 +66,23 @@ module Dommy
         # document.defaultView.DOMException, …).
         @backend.call_js("__rbHost.attachStatics")
         @backend.call_js("__rbHost.exposeConstructorsOnWindow")
+        # Route Dommy's host-side microtasks (MutationObserver delivery, …) onto
+        # the engine's native promise-job queue, so they interleave FIFO with JS
+        # `await`/Promise reactions instead of draining on a separate pass (which
+        # would deliver e.g. MutationObserver records only after `await
+        # Promise.resolve()`, batching several mutations into one callback).
+        if win.respond_to?(:scheduler) && win.scheduler.respond_to?(:native_microtask_scheduler=)
+          win.scheduler.native_microtask_scheduler = ->(callback) { schedule_native_microtask(callback) }
+        end
+      end
+
+      # Enqueue a Ruby callback as a NATIVE microtask (a resolved-promise job), so
+      # it runs in FIFO order with the engine's other promise jobs.
+      def schedule_native_microtask(callback)
+        id = (@microtask_seq += 1)
+        @microtask_procs[id] = callback
+        @backend.call_js("__rbHost.scheduleMicrotask", id)
+        nil
       end
 
       # Expose the seeded interface constructors (Element, Node, DOMException, …)
@@ -92,8 +114,8 @@ module Dommy
       # a callback that returns e.g. a Promise proxy must come back as the live
       # PromiseValue, otherwise Dommy can't adopt it (breaking
       # `fetch().then(r => r.json()).then(…)` chains).
-      def invoke_callback(id, args)
-        unwrap(@backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args))))
+      def invoke_callback(id, args, this_arg = nil)
+        unwrap(@backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg)))
       end
 
       # Turn a JS-side tagged value (produced by __rbHost.tag) back into Ruby:
@@ -149,6 +171,30 @@ module Dommy
           @handles.release(handle)
           nil
         end
+        # Run a Ruby microtask previously registered by schedule_native_microtask,
+        # invoked from the resolved-promise job scheduleMicrotask queued.
+        @backend.define_host_function("__rb_run_microtask") do |id|
+          callback = @microtask_procs.delete(id)
+          callback&.call
+          nil
+        end
+        # WebIDL "supported property names" for a legacy platform object (a live
+        # array-like/maplike collection): the current ordered named-property
+        # keys. Queried per ownKeys / getOwnPropertyDescriptor so it tracks DOM
+        # mutations. Nil when the object has no named getter.
+        @backend.define_host_function("__rb_named_props") do |handle|
+          obj = host(handle)
+          obj.respond_to?(:__js_named_props__) ? Array(obj.__js_named_props__).map(&:to_s) : nil
+        end
+        # Named deleter (`delete el.dataset.foo`): true when the object handled
+        # the delete, false/UNHANDLED when the JS side should fall back to its
+        # own (expando) delete.
+        @backend.define_host_function("__rb_host_delete") do |handle, prop|
+          dom_guard do
+            obj = host(handle)
+            obj.respond_to?(:__js_delete__) ? dommy_handled?(obj.__js_delete__(prop)) : false
+          end
+        end
         # `new Event(...)` / `new DOMException(...)` from a bare interface
         # constructor — resolve the named constructor and build. Returns nil when
         # the interface isn't constructable, so the JS side throws.
@@ -183,6 +229,8 @@ module Dommy
         @backend.eval(HOST_RUNTIME_JS)
         # Seed base interface prototypes from the single Ruby-side hierarchy.
         @backend.eval("__rbHost.seedInterfaces(#{JSON.generate(DomInterfaces::BASE_CHAINS)});")
+        # Observable depends on EventTarget.prototype existing (seeded above).
+        @backend.eval(OBSERVABLE_RUNTIME_JS)
       end
 
       def host(handle)
@@ -197,6 +245,10 @@ module Dommy
       # NotFoundError, classList SyntaxError/InvalidCharacterError, …).
       def dom_guard
         yield
+      rescue Dommy::Bridge::ThrowValue => e
+        # A host method threw an arbitrary value (e.g. throwIfAborted's reason);
+        # re-throw it verbatim JS-side, identity preserved.
+        {"__rb_throw__" => wrap(e.value)}
       rescue Dommy::DOMException => e
         {"__rb_exception__" => {"name" => e.name, "message" => e.message, "code" => e.code}}
       rescue Dommy::Bridge::TypeError => e
@@ -218,6 +270,10 @@ module Dommy
         # A byte buffer crosses back as a JS Uint8Array.
         if defined?(Dommy::Bridge::Bytes) && value.is_a?(Dommy::Bridge::Bytes)
           return {"__rb_bytes" => value.to_a}
+        end
+        # An opaque JS value returns as its original JS object (identity kept).
+        if defined?(Dommy::Bridge::JSValue) && value.is_a?(Dommy::Bridge::JSValue)
+          return {"__rb_js_ref" => value.ref}
         end
 
         case value
@@ -258,6 +314,15 @@ module Dommy
           elsif value.key?("__rb_callback")
             id = value["__rb_callback"]
             @callback_objects[id] ||= HostCallback.new(self, id)
+          elsif value.key?("__rb_js_ref")
+            # An opaque JS value (a non-plain object Ruby just stores and returns,
+            # e.g. an abort reason) — kept as a handle so it round-trips with
+            # identity rather than being flattened to a Hash.
+            if defined?(Dommy::Bridge::JSValue)
+              Dommy::Bridge::JSValue.new(value["__rb_js_ref"], value["__rb_js_label"])
+            else
+              value
+            end
           elsif value.key?("__rb_undefined")
             # A top-level JS `undefined` argument — distinct from JS null (nil).
             defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
@@ -267,6 +332,13 @@ module Dommy
           else
             value.transform_values { |element| unwrap(element) }
           end
+        when :undefined
+          # A raw JS `undefined` (e.g. a property-set value, which crosses via
+          # `dehydrate` rather than the tagged `dehydrateArgs`) reaches Ruby as
+          # the gem's `:undefined` symbol. Normalize it to the same sentinel a
+          # tagged top-level undefined produces, so setters can distinguish it
+          # from `null` (e.g. `el.ariaLabel = undefined` removes the attribute).
+          defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
         else
           value
         end
@@ -307,6 +379,13 @@ module Dommy
         return nil unless method == "call"
 
         @bridge.invoke_callback(@id, args)
+      end
+
+      # Invoke with an explicit `this` receiver — e.g. a MutationObserver
+      # callback whose `this` must be the observer, or an event listener whose
+      # `this` is the currentTarget.
+      def __js_call_with_this__(args, this_arg)
+        @bridge.invoke_callback(@id, args, this_arg)
       end
     end
   end

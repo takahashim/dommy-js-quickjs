@@ -21,7 +21,8 @@ module Dommy
         "ClassList" => "DOMTokenList",
         "DatasetMap" => "DOMStringMap",
         "StyleDeclaration" => "CSSStyleDeclaration",
-        "LiveNodeList" => "NodeList"
+        "LiveNodeList" => "NodeList",
+        "StandaloneEventTarget" => "EventTarget"
       }.freeze
 
       # Base interface chains seeded eagerly on the JS side so `instanceof Node`
@@ -48,7 +49,7 @@ module Dommy
         # Window-exposed constructors that frameworks call bare (new X(...)).
         # Seeding them creates the global; construction routes to the window.
         %w[MutationObserver], %w[IntersectionObserver], %w[ResizeObserver],
-        %w[PerformanceObserver], %w[AbortController],
+        %w[PerformanceObserver], %w[AbortController], %w[AbortSignal EventTarget],
         %w[FormData], %w[URL], %w[URLSearchParams], %w[Headers], %w[Request],
         %w[Blob], %w[File], %w[FileList], %w[FileReader], %w[XMLHttpRequest],
         %w[TextEncoder], %w[TextDecoder], %w[DOMParser], %w[XMLSerializer],
@@ -58,7 +59,10 @@ module Dommy
         %w[Range],
         # Collection interfaces, seeded so `result instanceof NodeList` /
         # `instanceof HTMLCollection` resolve (querySelectorAll, children, …).
-        %w[NodeList], %w[HTMLCollection]
+        %w[NodeList], %w[HTMLCollection],
+        # Traversal: NodeFilter exposes only [Constant]s (NodeFilter.SHOW_ELEMENT,
+        # .FILTER_ACCEPT, …); TreeWalker/NodeIterator are instances.
+        %w[NodeFilter], %w[TreeWalker], %w[NodeIterator]
       ].freeze
 
       module_function

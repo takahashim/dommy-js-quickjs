@@ -59,6 +59,19 @@ module Dommy
         raise "WptHarness#run is one-shot per instance" if @ran
 
         @ran = true
+        # HTML "named access on the Window": an element with an `id` is exposed
+        # as a bare global (`<div id=foo>` → `foo`). Our window proxy is distinct
+        # from the engine's globalThis, so bare identifiers can't reach it; mirror
+        # the document's id'd elements onto globalThis (without shadowing an
+        # existing global) so tests that reference elements by bare id resolve.
+        @harness.execute(<<~JS)
+          for (const __el of document.querySelectorAll("[id]")) {
+            const __id = __el.id;
+            if (__id && !(__id in globalThis)) {
+              try { Object.defineProperty(globalThis, __id, { value: __el, configurable: true, writable: true }); } catch (__e) {}
+            }
+          }
+        JS
         @harness.execute(script)
         # Flip testharness's all_loaded so completion can fire, then drive async tests.
         @harness.execute('window.dispatchEvent(new Event("load"));')
@@ -68,8 +81,13 @@ module Dommy
         # the deterministic clock past testharness's harness timeout (10s) so its
         # timeout fires — marking the stragglers TIMEOUT and running the
         # completion callback — and the tests that DID finish are still harvested.
+        # Advance in fine 100ms steps (not one big jump) so CHAINS of timers —
+        # an async iterable whose next() resolves via a 400ms setTimeout that, on
+        # firing, schedules the following one — all fire in sequence rather than
+        # stalling after the first two. 250 rounds = 25s, comfortably past the
+        # 10s harness timeout for anything genuinely stuck.
         if @harness.evaluate("globalThis.__wptResults === null")
-          @harness.pump(rounds: 2, step_ms: 11_000)
+          @harness.pump(rounds: 250, step_ms: 100)
         end
         Array(@harness.evaluate("globalThis.__wptResults"))
           .map { |r| Result.new(r["name"], r["status"], r["message"]) }

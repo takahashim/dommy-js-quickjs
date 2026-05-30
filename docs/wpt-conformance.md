@@ -15,40 +15,255 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、history (pushState/replaceState) 取り込みの後)
+## スナップショット (2026-05-31、querySelector セレクタ検証強化の後)
 
 ```
-  dom        4360/5138  (84.9%)
+  dom        6788/7561  (89.8%)   — うち querySelector-All 1559/1977, Element-matches 536/672, dom/abort 34/37
   url        1390/1396  (99.6%)
   encoding    118/178   (66.3%)
   domparsing   68/100   (68.0%)
-  html          7/7    (100.0%)
-  total      5943/6819  (87.2%)   — 51 ファイルが完全グリーン
+  html         64/95    (67.4%)
+  total      8428/9330  (90.3%)   — 96 ファイルが完全グリーン
 ```
 
-> **History API (pushState/replaceState) の自己完結サブセットを取り込み** (7/7 green)。
-> history/location の WPT は大半が navigation (back/forward/popstate)・実 iframe・cross-origin
-> 依存で no-network・単一文書の Dommy では本質的に動かせない。自己完結する pushState/
-> replaceState の引数処理・state・cross-origin URL の SecurityError のみ vendor。`History#push`/
-> `replace` に **URL の origin チェック** (resolve 失敗 or cross-origin → SecurityError) を追加。
-> ナビゲーション/iframe 依存のもの (url_rewriting, *_url) は vendor しない。
-
-> **MutationObserver (`dom/nodes/MutationObserver-*`) を取り込み** (17→98/133)。最大の解錠は
-> **ハーネスの強制 timeout**: 配信されないミューテーション (Range 操作等) で async_test が1つでも
-> ハングすると completion が発火せず**ファイル全体の結果が 0 件**になっていた。`WptHarness#run` が
-> pump 後に結果が null なら決定論クロックを testharness のタイムアウト (10s) 超まで進め、未完了
-> テストを TIMEOUT 扱いにして completion を発火 → 完了済みテストを回収 (再利用可能な汎用修正)。
-> あわせて CharacterData の `appendData`/`insertData`/`deleteData`/`replaceData`/`substringData`/
-> `length` (characterData レコード発火)、`observe()` のオプション検証 (`{}` や attributeOldValue+
-> attributes:false で `Bridge::TypeError`)、コールバックに `(records, observer)` を渡す。残り:
-> Range 操作のレコード (未配信)、record の nextSibling/addedNodes 詳細、`Node.normalize`、
-> パーサ挿入の document 監視、複数 observer の textContent タイミング。
+> **querySelector/matches/closest のセレクタ検証を強化 → +68 subtests** (querySelector-All 1505→1559、
+> Element-matches 522→536): (1) **引数なし → TypeError** (args.length で判定)、(2) **空文字列 →
+> SyntaxError**、(3) **先頭がコンビネータ (`>*` 等の相対セレクタ) → SyntaxError**、(4) **未知の
+> pseudo-class → SyntaxError** (既知 pseudo の全集合 `KNOWN_PSEUDOS` と照合; `:hover` 等の既知だが
+> 未実装は valid=空マッチ、`:example` 等の未知は invalid)。Nokogiri が黙って受理する無効セレクタを
+> spec 通り弾く。残りの querySelector 失敗 (~400) は Nokogiri の CSS3 パーサが `[attr*=v]`/`[attr=v i]`
+> 等を parse できない backend 上限 (別のセレクタエンジンが必要)。
 >
-> 直前: **Selectors** (querySelector-All 1505/1977 + Element-matches 522/672、動的 iframe 読込)、
-> **DOM Parsing** (68/100)、**Encoding** (118/178)。下記 Landed 参照。
+> 直前: **dom/abort 17→34/37** + **不透明 JS 値の identity 保持** (96 green)、**html/dom ARIA reflection**。
 
-## Landed (2026-05-30 セッション)
+> **dom/abort 17→34/37 (91.9%)、3 ファイル green** + **ブリッジの identity 制約を解消**: AbortSignal の
+> reason undefined (非abort時)、`abort()`/`abort(null)`/`abort(undefined)` の区別 (args.length)、
+> `AbortSignal.timeout` を win.scheduler に、`onabort` イベントハンドラ、abort イベントの isTrusted。
+> **核心 = 不透明 JS 値の round-trip**: 非 plain な JS オブジェクト (Error/DOMException/クラスインスタンス
+> = prototype ≠ Object.prototype) が Ruby に渡ると Hash 化され **identity を失っていた** (さらに Error は
+> enumerable プロパティ無しで空 Hash に)。dehydrate でこれらを **不透明な JS-side ref** として渡し、
+> Ruby は `Bridge::JSValue` として保持、戻すと元の JS オブジェクトに復元 → `signal.reason === reason` が成立
+> (plain `{}` は従来通り Hash なのでオプションバッグは無影響)。`Bridge::ThrowValue` で throwIfAborted が
+> 正確な reason を throw。**回帰ゼロで +7 subtests・+3 green** (CustomEvent detail 等にも波及)。残り 3 =
+> dependent-signal の abort 順序 (flattening が必要) + iframe (範囲外)。
+>
+> 直前: **html/dom ARIA reflection** (属性 44/44 + 要素 8/27)、**MutationObserver** (6 green)、**dom/lists** (189/189)。
 
+> **html/dom ARIA reflection**: **属性 (string) reflection 44/44 green** (aria-attribute-reflection
+> 41/41 + tentative 3/3) — `ariaXxx`↔`aria-xxx`、`role`↔`role` の nullable DOMString。**要素参照
+> reflection** も実装 (aria-element-reflection 0→8/27、disconnected 1/2): `ariaActiveDescendantElement`
+> ↔ `aria-activedescendant` (単数=Element)、`ariaDescribedByElements`↔`aria-describedby` (複数=Element
+> 配列)。explicit ref / IDREF 解決 (要素の root subtree でスコープ、切断後も有効)、setAttribute/
+> removeAttribute で explicit ref クリア。**named element access** (`<div id=foo>`→裸の `foo`) はハーネスで
+> id 要素を globalThis に mirror して近似。途中で**ブリッジ一般バグ修正**: JS `undefined` の **set 値**が
+> `:undefined` シンボルで渡り Bridge::UNDEFINED と別物だった→unwrap で正規化。aria-element の残り 19 は
+> shadow-DOM のアクセシビリティスコープ検証 (複雑な別機能)、labelledby は `test_driver.get_computed_label`
+> 依存で範囲外。`window` に JS 組み込み公開 + accessKeyLabel。reflection.js 系は 60s VM タイムアウトで未 vendor。
+>
+> 直前: **MutationObserver 複数改善** (6 ファイル green)、**dom/lists** (189/189)、**dom/collections** (50/53)。
+
+## (旧) MutationObserver 改善
+
+> **MutationObserver を複数改善** (dom/nodes MO 6 ファイル green): (1) **配信タイミングをブリッジ側で修正** —
+> dommy の host-side microtask (Ruby scheduler) を native の promise ジョブキューに統合し、
+> `await Promise.resolve()` と FIFO で interleave。(2) **childList レコードの type フィルタ** —
+> `childList:false` の observer に childList レコードを配信していたバグを修正。(3) **observe を target の
+> document に登録** — DOMParser 製 XML doc の要素の変更も届くように。(4) callback `this`=observer、
+> MutationObserverInit を JS ToBoolean 評価。→ textContent 1→4 (green)、attributes 41/42、sanity・
+> callback-arguments green。残りの MO はタイミングではなく backend 限界 (libxml2 隣接テキスト merge =
+> fragment/normalize、Range op の characterData レコード未発火、unprefixed-ns 属性、parser 観測)。
+>
+> 直前: **dom/lists** (189/189, 100%)、**dom/collections** (50/53)、**dom/observable** (187/241)。
+
+## Landed (2026-05-31 セッション)
+
+- **querySelector/matches/closest セレクタ検証** (Dommy)。**+68 subtests** (querySelector-All
+  1505→1559、Element-matches 522→536、回帰ゼロ、total 90.3% 突破)。`Internal.validate_selector!` を
+  全 query 系 (Element/Fragment/Document/NodeWrapperCache の querySelector(_all)、matches?、closest) で
+  呼び、空文字列・先頭コンビネータ・未知 pseudo-class を SyntaxError に。引数なしは各 __js_call__ dispatch
+  で `args.empty?` → Bridge::TypeError。未知 pseudo は `KNOWN_PSEUDOS` 全集合と照合 (属性セレクタ/文字列/
+  エスケープを含むセレクタは backend に委譲して誤検出回避)。残りは Nokogiri CSS3 パーサ上限。
+
+- **dom/abort + 不透明 JS 値の identity 保持** (bridge + Dommy)。dom/abort **17→34/37 (91.9%)、3 green**。
+  - **AbortSignal/Controller の細部**: reason は非abort時 undefined; `abort()` (引数なし) はデフォルト
+    AbortError、`abort(null)` は null、`abort(undefined)` はデフォルト — `args.length` で区別 (NO_REASON
+    センチネル); `AbortSignal.timeout` に win.scheduler を渡す (旧: win で set_timeout 無し); `onabort`
+    イベントハンドラプロパティ (add/remove_event_listener 経由); abort イベントの `isTrusted=true`
+    (Event#__internal_mark_trusted__)。
+  - **核心: 不透明 JS 値の round-trip (ブリッジ一般機能)**: 非 plain な JS オブジェクト (prototype が
+    Object.prototype でも null でもない = Error/DOMException/Map/クラスインスタンス) は dehydrate で
+    **JS-side レジストリに登録し `{__rb_js_ref: id}` として**渡す。Ruby は `Bridge::JSValue` (id 保持) として
+    扱い、wrap で `{__rb_js_ref}` → rehydrate でレジストリから**元の JS オブジェクトを復元** (identity 保持)。
+    plain `{}` データオブジェクトは従来通り key→value マップなのでオプションバッグは無影響。これで
+    `controller.abort(error); signal.reason === error` や CustomEvent detail の identity が成立。
+  - **`Bridge::ThrowValue`** (< RuntimeError): host メソッドが任意の値を JS に throw する機構
+    (`throwIfAborted` が文字列/数値/JSValue の reason を verbatim throw)。dom_guard が `{__rb_throw__}` に
+    タグ付けし JS rehydrate が re-throw。Exception reason (デフォルト AbortError) は従来通り直接 raise。
+  - 残り 3: AbortSignal.any の abort 順序 (dependent-signal を root に flatten + mark-then-fire が必要、
+    Observable への回帰リスクで見送り) + iframe contentWindow (範囲外)。
+
+- **html/dom ARIA reflection (属性 + 要素参照) + window グローバル公開** (bridge + Dommy)。
+  - **ARIA 要素参照 reflection** (Dommy): aria-element-reflection 0→8/27、disconnected 1/2。単数
+    `aria<Xxx>Element`→"aria-xxx" (Element or null)、複数 `aria<Xxx>Elements`→"aria-xxx" (Element 配列)。
+    `@aria_element_refs`/`@aria_elements_refs` に explicit ref を保持 (set で content 属性を ""、getter は
+    explicit を優先)、IDREF は要素の **root subtree** で解決 (切断時も有効)、set/removeAttribute の
+    `aria-*` 直接書き込みで explicit ref をクリア。**named element access**: ハーネスで `document.
+    querySelectorAll("[id]")` を globalThis に mirror (既存グローバルは shadow しない) し、裸の id 参照を解決。
+    残り 19 は shadow-DOM のアクセシビリティスコープ検証 (explicit ref が深い shadow で null になる)、
+    labelledby は `test_driver.get_computed_label` (a11y ツリー計算) で範囲外。
+  - **ARIA / role reflection** (Dommy): **aria-attribute-reflection 0→41/41 + tentative 0→3/3 green**。
+    `Element#aria_content_attr` が `ariaXxx`→"aria-"+xxx.downcase、`role`→"role" にマップ。get は
+    nullable DOMString (absent→nil/null)、set は null/undefined→属性削除・それ以外→ToString。__js_get__/
+    __js_set__ の else に汎用ハンドラを追加。
+  - **ブリッジ一般バグ修正** (bridge): JS `undefined` の **プロパティ set 値** が `dehydrate`
+    (tagged でない) 経由で Ruby に gem の **`:undefined` シンボル**として渡り、Bridge::UNDEFINED と
+    別物になっていた (args 経路 `dehydrateArgs` は `{__rb_undefined}` でタグ付け→正しく Bridge::UNDEFINED)。
+    `unwrap` の case に `when :undefined → Bridge::UNDEFINED` を追加し正規化。これで `el.ariaLabel =
+    undefined` 等の nullable setter が undefined を null と同様に扱える。
+  - **window に JS 組み込みを公開**: `install_browser_globals` で String/Number/Boolean/Object/Array/
+    Math/JSON/… を `window[name] = globalThis[name]` で window プロキシに own プロパティとして付与。
+    window は global object なので browser-correct。
+  - **`accessKeyLabel`**: `accesskey` 属性が単一の 1-code-point トークンなら `Alt+<KEY>`、
+    空/複数/複数文字なら "" (access-key-label 2/2 green)。
+  - **reflection-*.html は意図的に未 vendor**: ブリッジは全 DOM 操作が Ruby 往復で、reflection.js の
+    数千の属性×要素テストは 1 ファイルで 60s VM タイムアウト超過。物量 × overhead が原因で実用不可。
+    残る historical の失敗は permissive な window `has` トラップ (`'HTMLTableDataCellElement' in window`
+    が常に true)、未知 HTML 要素が `Dommy::Element` 止まりで HTMLUnknownElement 化されない、parser/all/
+    applet 等の obsolete 機能 — いずれも構造的・範囲外。
+
+- **MutationObserver 配信を native microtask キューに統合 + MO 改善** (bridge + Dommy)。
+  - **タイミング修正 (核心)**: dommy の `scheduler.queue_microtask` (MO 配信等) は Ruby 側の `@microtasks`
+    キューに積まれ、native QuickJS の promise ジョブキューとは別ドレインだった。そのため
+    `el.textContent="foo"; await Promise.resolve()` でテストが期待する「await 後に配信済み」が成立せず、
+    複数の変更が1コールバックに集約 (「1レコード期待だが3」) されていた。**`Scheduler#native_microtask_scheduler`
+    フック**を追加し、ブリッジが `schedule_native_microtask` → `__rbHost.scheduleMicrotask(id)` →
+    `Promise.resolve().then(() => __rb_run_microtask(id))` で Ruby proc を native ジョブとして enqueue する
+    よう配線 (`HostBridge#window=` で注入)。これで host-side microtask が JS の await/Promise reaction と
+    FIFO に並び、textContent 1→3。vanilla CRuby ではフック未設定で従来通り `@microtasks` にフォールバック。
+  - **childList レコードの type フィルタ** (実バグ): `notify_child_list_mutation` が observer の登録
+    `child_list` フラグを見ずに全 observer へ配信していた (attribute/characterData は確認済みだった)。
+    `find_matching_entry` で `entry[:child_list]` を確認 → `observe(t, {childList:false, attributes:true})`
+    が childList レコードを受け取らなくなった (attributes 40→41)。
+  - **observe を target の document に登録** (実バグ): MutationObserver は `@document = window.document`
+    (メイン) 固定で、別 document (DOMParser 製 XML doc) の要素を observe しても、その doc の coordinator に
+    登録されず変更が届かなかった。target の node-document に登録 (`@registered_docs` で追跡し disconnect で
+    全解除) → textContent CDATA (XML-doc MO) が通り textContent 1→4 green。
+  - **callback の `this`=observer**: `invokeCallback`/`invoke_callback` に thisArg、HostCallback に
+    `__js_call_with_this__`、MutationObserver が observer を receiver に呼ぶ (callback-arguments green)。
+  - **`truthy_option` を JS ToBoolean に**: MutationObserverInit メンバは WebIDL boolean なので
+    `attributes: ["abc"]` (オブジェクト) も truthy (sanity green)。
+  - 残りの MO 失敗はタイミングではなく個別の backend 限界: libxml2 が fragment/normalize の隣接テキストを
+    merge (addedNodes 不一致)、Range.deleteContents/extractContents が characterData レコードを発火しない
+    (かつ setup の隣接テキストも merge)、unprefixed-ns 属性 (removeAttributeNS) が libxml2 で round-trip
+    しない、parser 観測 (ストリーミングパーサ無し)、replaceChild(self,self) の 2レコードセマンティクス。
+
+- **dom/lists (DOMTokenList) 完全対応** (Dommy + bridge)。**46→189/189 (100%)、全 5 ファイル green**。
+  - **反映 DOMTokenList 属性**: `ClassList` を任意の content attribute に一般化 (`@attribute`)。
+    `Element#reflected_token_list` が要素+名前空間に応じて DOMTokenList か **UNDEFINED**（→ JS undefined）
+    を返す: relList = a/area/link(HTML) + a(SVG); htmlFor = output(HTML); sandbox = iframe(HTML);
+    sizes = link(HTML); 非該当は undefined（null でなく）。`output.htmlFor`/`iframe.sandbox`/`link.sizes`
+    はサブクラスの reflect_string を JS 読み取りで token list にインターセプト（Ruby の文字列 accessor は維持）。
+  - **iterable メソッド = Array.prototype 由来**: WebIDL の value-iterator interface（indexed getter +
+    `iterable<>`）は keys/values/entries/forEach/@@iterator が **%Array.prototype% の関数そのもの**
+    （`list.values === Array.prototype.values`）。bridge のカスタムイテレータを Array.prototype のメソッド
+    に置換（proxy は array-like なので動作し、Array Iterator を返すので `instanceof Array` は false）。
+    forEach も追加。
+  - **getElementsByTagNameNS** を Element/Document に追加。
+
+- **dom/collections (WebIDL legacy platform object 反映) 実装** (bridge JS + Dommy)。**12→50/53
+  (94.3%)、8 ファイル green**。HTMLCollection / DOMStringMap (dataset) / NamedNodeMap の indexed +
+  named プロパティを Proxy トラップで spec 通りに反映:
+  - **named プロパティ**: Ruby 側が `__js_named_props__` で live な supported property names を公開
+    (HTMLCollection = 各要素の id→name を tree 順・重複除去・name は HTML 名前空間のみ; DOMStringMap =
+    camelCase した `data-*` キー; NamedNodeMap = 属性の qualified name)。bridge は `__rb_named_props` で
+    毎回ライブ取得し、`ownKeys`/`getOwnPropertyDescriptor`/`has`/`set`/`defineProperty`/`deleteProperty`
+    に反映。named は HTMLCollection/NamedNodeMap で**非列挙・読取専用**、DOMStringMap で**列挙可・書込可
+    + named deleter** (`__js_delete__`)。
+  - **legacy platform [[Set]]/[[Delete]]**: 配列インデックス代入は expando にならず no-op(sloppy)
+    /TypeError(strict); 読取専用 named プロパティへの代入も拒否（既に expando が shadow している場合のみ更新）。
+  - **インデックス descriptor は writable:false**; 範囲外の配列インデックスは **undefined**（named に
+    フォールバックしない — `coll[2147483648]` は undefined だが `namedItem(2147483648)` は要素）。
+  - HTMLCollection は **@@iterator のみ**（`iterable<>` 宣言なし → values/keys/entries/forEach を持たない）。
+  - **Dommy 修正**: `getElementsByTagNameNS` を Element/Document に追加; `namedItem` の数値引数が
+    int32 超で Float として渡る件を整数文字列化; HTMLCollection の数値文字列アクセスを配列インデックス
+    (item) と非インデックス (named) で分岐。`StandaloneEventTarget` 同様の名前付き collection マッピング。
+
+- **dom/observable (WICG Observable API) 新規実装** (bridge JS + Dommy)。**0→187/241 (77.6%)、10
+  ファイル green**。QuickJS は本物の JS エンジンなので、Observable はリアクティブプリミティブを
+
+- **dom/observable (WICG Observable API) 新規実装** (bridge JS + Dommy)。**0→187/241 (77.6%)、10
+  ファイル green**。QuickJS は本物の JS エンジンなので、Observable はリアクティブプリミティブを
+  **JS ポリフィル** (`lib/dommy/js/observable_runtime.js`) として実装し、DOM プロトタイプ seed 後に
+  `install!` で eval。host 連携点は EventTarget / AbortController / グローバルエラー報告のみ。
+  - **`Observable`/`Subscriber`**: subscribe コールバック、`next/error/complete/addTeardown/active/signal`
+    (#private フィールドで receiver-less 呼び出し→TypeError)、ACCEPT 完了/error で signal abort→teardown
+    LIFO。**report exception** は `error` ErrorEvent をグローバルに dispatch (Error は stack から
+    lineno/colno、文字列等は 0)。
+  - **operators**: map/filter/take/drop/flatMap/switchMap/takeUntil/catch/finally/inspect (Observable 返し) +
+    first/last/find/some/every/reduce/toArray/forEach (Promise 返し)。take/drop の負値は unsigned long long
+    として最大値 (Infinity) に。first/last は空完了で RangeError。takeUntil は notifier の next **も error も**
+    complete を呼ぶ (error 非伝播)、sync 発火時は source を購読しない。
+  - **`Observable.from`**: Observable/async-iterable/iterable/Promise。TC39 GetMethod 準拠 (present-but-not-
+    callable は TypeError、@@iterator は from() 時と subscribe 時に**再読**しキャッシュしない)。
+  - **`EventTarget.prototype.when`**: `addEventListener(type, …, {signal})` を購読/購読解除に橋渡し。
+    `new EventTarget()` (StandaloneEventTarget) が "EventTarget" として crossing するよう NAME_OVERRIDES 追加。
+  - **基盤バグ修正 (Dommy、全領域に有益)**: (1) **`queueMicrotask`** が window scheduler 経由で native
+    promise キューと別だったため Promise reaction と FIFO 順序がずれていた → `Promise.resolve().then` に。
+    (2) **`setTimeout`/`setInterval` の delay** が undefined/非数値で `to_i` クラッシュ → 0 に強制。
+    (3) **`AbortSignal` の abort 理由**が無指定/undefined で `null` だった → spec 通り **AbortError
+    DOMException** を既定に。(4) **`AbortSignal`** をグローバル公開 (static `abort`/`any`/`timeout`)。
+  - 残り 54: 連鎖タイマー依存の async-iterable (harness pump 制約)、detached-document (.window.js)、
+    高度な teardown/abort 順序、microtask タイミング細部。
+
+- **dom/traversal (TreeWalker / NodeIterator) 代表コーパス + 掘り下げ修正** (Dommy + bridge)。
+  **1568/1584 (99.0%)、8 ファイル green**。修正した実バグ:
+  - **`invoke_filter` が JS フィルタを呼べていなかった**: 関数フィルタ (HostCallback) も
+    `{acceptNode}` オブジェクト (Hash) も Ruby の `accept_node`/`call` に respond せず**常に
+    FILTER_ACCEPT** を返していた。`__js_call__("call", …)` 経由で呼び、戻り値を WebIDL 強制
+    (boolean→0/1)。acceptNode が callable でなければ TypeError。
+  - **TreeWalker の SKIP/REJECT セマンティクス**: `traverse_children`/`traverse_siblings`/`next_node`/
+    `previous_node` を WHATWG アルゴリズムに書き換え (SKIP=子へ降りる、REJECT=サブツリーごと
+    スキップ)。previousNode はルートも返しうる (parentNode と非対称)。
+  - **NodeIterator の commit セマンティクス**: `next_node`/`previous_node` を**ローカル変数**で
+    走査し、**ACCEPT 時のみ** referenceNode/pointerBeforeReferenceNode をコミット (null を返す際は
+    位置を変えない)。これが NodeIterator.html を 118→757 に押し上げた決定打。
+  - **`NodeIterator` pre-removing steps**: live iterator を Document に登録し、`remove_node_with_notify`
+    の unlink 前に各 iterator の referenceNode を WHATWG 手順で調整。NodeIterator-removal 5→15/16。
+  - **`hasChildNodes()` / `hasAttributes()` の欠落**: Element/Document/Fragment/ProcessingInstruction/
+    DocumentType/CharacterData に未実装で、common.js の `previousNode`/`nextNode` ヘルパーが
+    `node.hasChildNodes()` で**"not a function"** を投げていた。全ノード型に追加。
+  - **`NodeFilter.bitmask_for` を `1 << (nodeType-1)` に**: PI/CDATASection/Attr を扱えず PI ルートの
+    iterator が空になっていた。
+  - **whatToShow / currentNode の強制**: `createTreeWalker`/`createNodeIterator` で undefined→既定
+    0xFFFFFFFF・null→0・それ以外 ToUint32。currentNode setter は非 Node に TypeError (`is_a?(Node)`)。
+  - bridge: `NodeFilter` 定数を `INTERFACE_CONSTANTS` で公開、`NodeFilter`/`TreeWalker`/`NodeIterator`
+    を BASE_CHAINS に seed。残り 16 件は assert_readonly (Proxy descriptor ギャップ)、フィルタ例外の
+    同一性、再入 InvalidStateError で構造的・範囲外。
+
+- **Range (`dom/ranges/`) 代表サブセット + 掘り下げ修正** (Dommy)。**310/319** (7 ファイル中 3 green;
+  計測した全 dom/ranges は 20524/23304 = 88.1%)。3 つの実バグ: (1) **`Document.createCDATASection`**
+  追加 (`CDATASectionNode` = Text サブタイプ nodeType 4 + Backend.create_cdata/cdata_class +
+  wrapper マッピング)。common.js の `setupRangeTests()` がこれ無しで死亡し全 Range テストが setup で
+  error していた。(2) **CharacterDataNode に `ownerDocument`** (テキストノードが null を返し
+  `rangeFromEndpoints` の createRange が全滅)。(3) **`Range#comparePoint`/`isPointInRange` 実装 +
+  `compareBoundaryPoints` の検証**: offset は WebIDL unsigned long (負値 wrap → IndexSizeError)、
+  無効 `how`→NotSupportedError、別ツリー→WrongDocumentError、doctype→InvalidNodeTypeError。
+  巨大な組み合わせテスト (compareBoundaryPoints 9313 / comparePoint 5580 / isPointInRange 5733 /
+  intersectsNode 2356) は Range がコーパスを支配するため vendor せず (実装は保持)。content 操作
+  (deleteContents/extractContents/insertNode/surroundContents/cloneContents) は srcless iframe を
+  2 つ作り両方で操作して比較するパターンで範囲外。
+- **MutationObserver の record 詳細** (Dommy)。**98→109/133** (childList 19→28、attributes
+  38→40)。(1) **ノード移動 = removal + addition** (`detach_with_notify`): insertBefore/appendChild/
+  append/prepend で既存ノード (親あり) を挿入する際、旧親へ childList removal レコードを先に発火
+  (within-parent の並べ替えは同一親に 2 レコード)。(2) **削除前の sibling 捕捉**
+  (`Document#remove_node_with_notify`): 全 remove 経路 (Element/CharacterData の `remove`、
+  `remove_child`、Range `delete_contents`) が unlink 前に previous/next sibling を**ラップして**
+  捕捉し record に渡す (コーディネータは明示 sibling を verbatim 記録するので raw Nokogiri ノードだと
+  undefined になっていた)。(3) **attributeNamespace** をレコードに記録 (setAttributeNS/
+  removeAttributeNS が `namespace:` を渡す; namespaced 属性は局所名を小文字化しない)。残り: Range
+  "child and data removal"・`Node.normalize`・fragment-text は **libxml2 の隣接テキスト結合**で
+  ブロック (テスト設定が 3 つの別テキストノードを作るが 1 つに融合) — バックエンド根本制約。
+  callback の `this`=observer はブリッジのコールバック receiver 対応が要るため見送り (1 件)。
 - **History API (pushState/replaceState) 自己完結サブセット** (Dommy)。
   `the-history-interface` の自己完結テスト **7/7 green** (pushState/replaceState の基本・引数省略・
   state・cross-origin SecurityError)。`History#push`/`replace` が URL を文書 URL に対して解決し、
