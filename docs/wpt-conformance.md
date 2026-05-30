@@ -15,31 +15,51 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、DOM Parsing/Serialization コーパス取り込みの後)
+## スナップショット (2026-05-30、Selectors コーパス取り込みの後)
 
 ```
-  dom        2200/2318  (94.9%)
+  dom        4262/5005  (85.2%)
   url        1390/1396  (99.6%)
   encoding    118/178   (66.3%)
   domparsing   68/100   (68.0%)
-  total      3776/3992  (94.6%)   — 38 ファイルが完全グリーン
+  total      5838/6679  (87.4%)   — 41 ファイルが完全グリーン
 ```
 
-> **DOM Parsing & Serialization (`/domparsing/`) を取り込み** (29→68/100)。DOMParser /
-> innerHTML / outerHTML / insertAdjacentHTML はバックエンドパーサ上に既存だったので「計測 +
-> 補修」: insertAdjacentHTML の **位置文字列を case-insensitive** に + 挿入順 + 親なし→
-> NoModificationAllowedError (6→30/31)、**outerHTML setter を `__js_set__` に配線** + 値強制変換、
-> **set 経路を `dom_guard` で包む** (throwing setter の DOMException が JS に伝播するように。
-> 潜在バグ修正)、innerHTML/outerHTML の **[LegacyNullToEmptyString] ToString** を JS set トラップで、
-> **`compatMode`** (doctype 有無)、DOMParser の無効 enum → TypeError、**XML パース** (Nokogiri の
-> XML パーサ + `document_element` を `root` ベースに) + XMLSerializer を `to_xml` 化。残り: XMLSerializer
-> の名前空間アルゴリズム (25)、style 属性の CSS 直列化 (4)、Nokogiri のテキストノード結合/identity。
+> **Selectors (`dom/nodes/` の querySelector/matches/closest 系) を取り込み**。最大の解錠は
+> **動的 iframe 読込のハーネス対応**: Selectors-API の包括スイート (Element-matches /
+> ParentNode-querySelector-All) は `iframe` を実行時生成し `onload` 内で全テストを定義するため、
+> 従来 0/0 だった。`WptRunner` が `frame.src=` 代入を検出して content を vendor、`BrowserHarness`
+> が pump 中に生成済み iframe を配線し `load` を発火 → Element-matches **0→522/672**、
+> querySelector-All **0→1505/1977** (~1900 subtests 解錠)。あわせて `:scope` 対応 (scope 疑似
+> ハンドラ + 文書から評価して子孫に絞る)、closest 書き直し、無効セレクタ→SyntaxError /
+> 未対応疑似→空マッチ、`DocumentFragment.ownerDocument`、`NodeList`/`HTMLCollection` の interface
+> シード。残りの大半は **Nokogiri の CSS パーサが CSS3 セレクタ (`[attr*=v]` / `[attr=v i]` 等) を
+> 解析できない**根本制約。dom が 2318→5005 subtests に増え % は見かけ下がったが絶対合格は +2062。
 >
-> 直前: **Encoding** (118/178) — 型付き配列マーシャリング (`Bridge::Bytes`↔Uint8Array) + WHATWG
-> UTF-8 デコーダ + encodeInto + lone-surrogate scrub。残りは SAB/Big5/detach で範囲外。下記 Landed 参照。
+> 直前: **DOM Parsing** (68/100)、**Encoding** (118/178)。下記 Landed 参照。
 
 ## Landed (2026-05-30 セッション)
 
+- **Selectors (querySelector/matches/closest) 取り込み** (ハーネス + ブリッジ + Dommy)。
+  Element-matches **0→522/672**、ParentNode-querySelector-All **0→1505/1977**、Element-closest
+  **24→28/29**、querySelector-scope **0→4/4** (dom 2200→4262)。(1) **動的 iframe 読込**
+  (ハーネス、最大レバー): 包括スイートは `document.createElement("iframe")` + `frame.src=` +
+  `frame.onload=` で実行時に iframe を生成し、その contentDocument に対して全テストを定義する。
+  `WptRunner` が inline script の `.src="…\.html"` 代入を検出し content を vendor (フラグメント除去
+  キー)、`BrowserHarness#wire_dynamic_iframes` が pump 各ラウンドで未配線 iframe を
+  `Dommy.parse` → contentDocument 設定 → `expose_constructors_on` → `load` イベント発火
+  (Dommy は `iframe.onload=` を load で呼ぶ) → `init()` が走り ~1900 subtests 解錠。
+  (2) **`:scope`** (Dommy): `ScopedCSSPseudoHandlers` で Nokogiri の `nokogiri:scope(.)` を
+  コンテキスト要素に解決。Nokogiri は `el.css` を子孫 (`.//`) に限定し要素自身を含めないため、
+  `:scope` 含有クエリは文書から評価して el の子孫に絞る。(3) **closest 書き直し** (Dommy):
+  scope ハンドラでセレクタ評価 → 最近接の inclusive ancestor を返す。(4) **無効セレクタ →
+  SyntaxError** (Dommy): Nokogiri の CSS *パース* エラー ("unexpected … after …") は
+  SyntaxError、"Unregistered function" (未対応疑似 `:hover` 等) は空マッチに degrade。
+  (5) **`DocumentFragment.ownerDocument`** (Dommy): null だったのを所有文書に (interface チェックの
+  `ownerDocument.defaultView.NodeList` が解決)。(6) **`NodeList`/`HTMLCollection` を BASE_CHAINS に**
+  (ブリッジ): `result instanceof NodeList` 用にグローバルコンストラクタをシード。残りの大半は
+  **Nokogiri の CSS パーサが多くの CSS3 セレクタを解析できない**根本制約 (別エンジンが必要)、
+  および未対応疑似・名前空間・case-insensitive 属性フラグ。
 - **DOM Parsing & Serialization (`/domparsing/`) 取り込み** (ブリッジ + Dommy)。**29→68/100**、
   5 ファイル green (insert-adjacent / innerhtml-06 / innerhtml-li-autoclosing / outerhtml-01 /
   domparser-spurious-attributes)。(1) **insertAdjacentHTML** (Dommy): 位置文字列を ASCII

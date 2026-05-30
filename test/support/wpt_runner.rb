@@ -28,6 +28,8 @@ module Dommy
       META_SCRIPT = /^\s*\/\/\s*META:\s*script=(\S+)/.freeze
       SCRIPT_TAG  = /<script\b([^>]*)>(.*?)<\/script>/mi.freeze
       IFRAME_TAG  = /<iframe\b([^>]*)>/i.freeze
+      # A dynamic `frame.src = "…"` assignment to an `.html`/`.htm`/`.xht` resource.
+      IFRAME_SRC_ASSIGN = /\.src\s*=\s*["']([^"']+\.(?:html|htm|xht)[^"']*)["']/i.freeze
       # WPT uses both quoted and unquoted attributes (`src=../common.js`).
       SRC_ATTR    = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.freeze
       FETCH_CALL  = /\bfetch\(\s*["']([^"']+)["']/.freeze
@@ -121,18 +123,23 @@ module Dommy
           )
         end
 
-        # Map each `<iframe src=…>` to the markup of its src resource (when it
-        # exists on disk), so the harness can populate `iframe.contentDocument`.
+        # Map each iframe content `src` to the markup of its resource (when it
+        # exists on disk), so the harness can populate `iframe.contentDocument` —
+        # both static `<iframe src=…>` and dynamic `frame.src = "…"` assignments
+        # (Selectors-API tests create an iframe and run their suite on load).
+        # Keyed by the fragment-stripped src so `…content.html#target` resolves.
         def iframe_docs_for(source, dir)
           docs = {}
-          source.scan(IFRAME_TAG) do |attrs,|
-            m = attrs.match(SRC_ATTR)
-            src = m && (m[1] || m[2] || m[3])
+          add_iframe_doc = lambda do |src|
             next unless src
 
-            file = resolve_include(src, dir)
-            docs[src] = ::File.read(file) if ::File.exist?(file)
+            clean = src.sub(/#.*\z/, "")
+            file = resolve_include(clean, dir)
+            docs[clean] = ::File.read(file) if ::File.exist?(file)
           end
+
+          source.scan(IFRAME_TAG) { |attrs,| add_iframe_doc.call(attrs.match(SRC_ATTR)&.values_at(1, 2, 3)&.compact&.first) }
+          source.scan(IFRAME_SRC_ASSIGN) { |src,| add_iframe_doc.call(src) }
           docs.empty? ? nil : docs
         end
 

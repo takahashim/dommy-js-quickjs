@@ -55,7 +55,10 @@ module Dommy
         %w[MessageChannel], %w[BroadcastChannel], %w[WebSocket], %w[EventSource],
         %w[Notification], %w[Worker], %w[DataTransfer],
         %w[ReadableStream], %w[WritableStream], %w[TransformStream],
-        %w[Range]
+        %w[Range],
+        # Collection interfaces, seeded so `result instanceof NodeList` /
+        # `instanceof HTMLCollection` resolve (querySelectorAll, children, …).
+        %w[NodeList], %w[HTMLCollection]
       ].freeze
 
       module_function

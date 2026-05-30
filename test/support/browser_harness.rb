@@ -24,7 +24,8 @@ module Dommy
       def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil, iframe_docs: nil)
         @window = Dommy.parse(html)
         @window.__js_set__("__fetchy_stub__", fetch_stub) if fetch_stub
-        @iframe_windows = iframe_docs && !iframe_docs.empty? ? wire_iframe_documents(iframe_docs) : []
+        @iframe_content = iframe_docs || {}
+        @iframe_windows = @iframe_content.empty? ? [] : wire_iframe_documents(@iframe_content)
         @runtime = Dommy::Js::Quickjs::Runtime.new
         @errors = []
         @logs = []
@@ -54,11 +55,34 @@ module Dommy
       # rendering to the next repaint, so a single drain isn't enough.
       def pump(rounds: 20, step_ms: 16)
         rounds.times do
+          wire_dynamic_iframes
           @runtime.drain_microtasks
           @window.scheduler.advance_time(step_ms)
           @runtime.drain_microtasks
         end
         self
+      end
+
+      # Wire iframes created at runtime (`frame.src = "…"; body.appendChild(frame)`)
+      # whose src has vendored content: populate contentDocument and fire `load`
+      # so a `frame.onload` handler (e.g. the Selectors-API suites that run their
+      # tests against the iframe document) executes. Idempotent.
+      def wire_dynamic_iframes
+        return if @iframe_content.empty?
+
+        @window.document.query_selector_all("iframe").each do |iframe|
+          next if iframe.content_document
+
+          markup = @iframe_content[iframe.get_attribute("src").to_s.sub(/#.*\z/, "")]
+          next unless markup
+
+          sub = Dommy.parse(markup)
+          sub.document.default_view = sub
+          iframe.__internal_set_content_document__(sub.document)
+          @runtime.expose_constructors_on(sub)
+          @iframe_windows << sub
+          iframe.dispatch_event(Dommy::Event.new("load"))
+        end
       end
 
       # Human-readable dump of captured rejections (message + JS stack) — handy
