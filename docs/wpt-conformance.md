@@ -15,12 +15,12 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-30、… + createElementNS 名前空間 + undefined/null 区別の後)
+## スナップショット (2026-05-30、… + undefined/null 区別 + Node.isEqualNode の後)
 
 ```
-  dom      1888/2261  (83.5%)
+  dom      1895/2261  (83.8%)
   url        97/109   (89.0%)
-  total    1985/2370  (83.8%)   — 14 ファイルが完全グリーン
+  total    1992/2370  (84.1%)   — 14 ファイルが完全グリーン
 ```
 
 セッション開始時の 108/2370 (4.6%) からの伸び。内訳:
@@ -43,6 +43,16 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 
 ## Landed (2026-05-30 セッション)
 
+- **Node.isEqualNode + DocumentType/PI/DOMImplementation** (Dommy)。
+  `Node-isEqualNode.html` **0→7/9**。`Internal::NodeEquality` が WHATWG の "equals"
+  (型別データ + 順序付き子孫の再帰比較) を実装し、`Node` モジュールの `is_equal_node`
+  から全ノードクラス (Element / CharacterData→Text・Comment / Fragment / Document /
+  DocumentType / ProcessingInstruction) に配線。比較はラッパーの公開アクセサ経由
+  (`__js_get__` の型別プロパティ + `child_nodes` + `attributes`) なので不均一なノード
+  クラス間で一様。あわせて: `DocumentType` に publicId/systemId、`document.implementation`
+  (`DOMImplementation#createDocumentType`)、`ProcessingInstruction` +
+  `document.createProcessingInstruction`。残り 2 (subtest 8/9) は
+  `implementation.createDocument`/`createHTMLDocument` (外来/XML 文書) 待ち。
 - **ブリッジの undefined / null 区別** (ブリッジ + Dommy)。JS `undefined` と `null` が
   両方 Ruby `nil` に畳まれていたのを、トップレベルの呼び出し引数に限り区別:
   `dehydrateArgs` が明示的 `undefined` を `{__rb_undefined:true}` でタグ付け →
@@ -296,9 +306,11 @@ window コンストラクタ + 検証 + iframe + 名前空間メタデータ + N
 
 ### インターフェース / より大きな機能 (優先度低)
 - `NodeList` インターフェースのシード (getElementsByClassName のインターフェースチェック)。
-- `document.implementation.createDocument` / 外来 document / `createDocumentType` —
-  `Node-isEqualNode` と WPT の `dom/common.js` のセットアップに必要 (それらのテストは
-  セットアップがこれ無しでは throw するため、まだベンダリングしていない)。
+- `implementation.createDocumentType` / `Node.isEqualNode` / `createProcessingInstruction`
+  は **完了** (Landed)。残るのは `implementation.createDocument` /
+  `createHTMLDocument` (外来/XML 文書を新規生成) — `Node-isEqualNode` の残り 2 subtest
+  + WPT の `dom/common.js` セットアップに必要。window に紐づかない独立 Document の構築 +
+  XML 文書セマンティクスが要る、やや大きめの機能。
 - `DocumentFragment#childNodes` / `Document` ノードの dehydration / "Illegal
   constructor" — **ブリッジ側** の dehydration + インターフェースカバレッジ。
 - **Proxy `set` トラップが読み取り専用のホストゲッターを expando でシャドウする。** Dommy
