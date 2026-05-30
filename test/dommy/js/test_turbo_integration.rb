@@ -56,6 +56,26 @@ class Dommy::Js::TestTurboIntegration < Minitest::Test
     assert_equal "<li>only</li>", @win.document.get_element_by_id("list").inner_html
   end
 
+  # turbo-frame lazy loading: a frame with [src] fetches its URL, Turbo parses
+  # the response, extracts the matching frame and swaps its content in — the full
+  # fetch -> DOMParser -> Range-based swap path.
+  def test_turbo_frame_lazy_load
+    @win.__js_set__("__fetchy_stub__", {
+      "http://localhost/frame" => {
+        "status" => 200, "contentType" => "text/html",
+        "body" => '<html><body><turbo-frame id="f">LOADED CONTENT</turbo-frame></body></html>'
+      }
+    })
+    @rt.execute(<<~JS)
+      const f = document.createElement("turbo-frame");
+      f.id = "f";
+      f.setAttribute("src", "/frame");
+      document.body.appendChild(f);
+    JS
+    pump
+    assert_equal "LOADED CONTENT", @win.document.get_element_by_id("f").text_content.strip
+  end
+
   private
 
   # Bare browser globals Turbo reaches for, aliased onto the Dommy window.
@@ -67,6 +87,7 @@ class Dommy::Js::TestTurboIntegration < Minitest::Test
       globalThis.navigator = window.navigator;
       globalThis.sessionStorage = window.sessionStorage;
       globalThis.localStorage = window.localStorage;
+      globalThis.CSS = window.CSS;
       globalThis.fetch = (...a) => window.fetch(...a);
       globalThis.addEventListener = (...a) => window.addEventListener(...a);
       globalThis.removeEventListener = (...a) => window.removeEventListener(...a);

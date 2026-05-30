@@ -69,6 +69,12 @@ module Dommy
           @backend.drain_microtasks
         end
 
+        # Surface otherwise-swallowed JS promise rejections (see Backend).
+        def on_unhandled_rejection(&block)
+          @backend.on_unhandled_rejection(&block)
+          self
+        end
+
         # Run JS GC then drain, so FinalizationRegistry cleanup callbacks fire and
         # release handles for proxies that are no longer referenced.
         def collect_garbage

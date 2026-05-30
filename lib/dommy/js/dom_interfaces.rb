@@ -47,21 +47,15 @@ module Dommy
         %w[DOMException],
         # Window-exposed constructors that frameworks call bare (new X(...)).
         # Seeding them creates the global; construction routes to the window.
-        %w[MutationObserver],
-        %w[IntersectionObserver],
-        %w[ResizeObserver],
-        %w[PerformanceObserver],
-        %w[AbortController],
-        %w[FormData],
-        %w[URL],
-        %w[Blob],
-        %w[File],
-        %w[FileList],
-        %w[Request],
-        %w[FileReader],
-        %w[XMLHttpRequest],
-        %w[TextEncoder],
-        %w[TextDecoder]
+        %w[MutationObserver], %w[IntersectionObserver], %w[ResizeObserver],
+        %w[PerformanceObserver], %w[AbortController],
+        %w[FormData], %w[URL], %w[URLSearchParams], %w[Headers], %w[Request],
+        %w[Blob], %w[File], %w[FileList], %w[FileReader], %w[XMLHttpRequest],
+        %w[TextEncoder], %w[TextDecoder], %w[DOMParser], %w[XMLSerializer],
+        %w[MessageChannel], %w[BroadcastChannel], %w[WebSocket], %w[EventSource],
+        %w[Notification], %w[Worker], %w[DataTransfer],
+        %w[ReadableStream], %w[WritableStream], %w[TransformStream],
+        %w[Range]
       ].freeze
 
       module_function

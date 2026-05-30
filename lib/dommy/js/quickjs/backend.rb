@@ -38,6 +38,13 @@ module Dommy
           @vm.drain_jobs!
         end
 
+        # Register a handler for promise rejections that reach the microtask
+        # queue with no `.catch` — frameworks (Turbo, …) often swallow these,
+        # so surfacing them is essential for diagnosing failures.
+        def on_unhandled_rejection(&block)
+          @vm.on_unhandled_rejection(&block)
+        end
+
         def run_gc
           @vm.gc!
         end
