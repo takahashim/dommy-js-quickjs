@@ -335,7 +335,10 @@ module Dommy
           value.map { |element| unwrap(element) }
         when Hash
           if value.key?("__rb_handle")
-            host(value["__rb_handle"])
+            # Tolerant: an argument referencing a released/invalid node resolves
+            # to nil rather than crashing (e.g. Vue passes a transient handle
+            # during v-model setup). A receiver handle still uses strict #host.
+            @handles.lookup(value["__rb_handle"])
           elsif value.key?("__rb_callback")
             id = value["__rb_callback"]
             @callback_objects[id] ||= HostCallback.new(self, id)

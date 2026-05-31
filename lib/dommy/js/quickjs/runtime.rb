@@ -67,6 +67,17 @@ module Dommy
           nil
         end
 
+        # Load a script the way a browser <script> does: in GLOBAL scope, so its
+        # top-level `var` / `function` / `let` declarations become globals. UMD /
+        # "global" bundles rely on this — e.g. Vue's global build is literally
+        # `var Vue = (function(){…})({})`, which an IIFE wrapper (execute) would
+        # trap in function scope. Drains microtasks afterward.
+        def load_script(js)
+          @backend.eval(js)
+          drain_microtasks
+          nil
+        end
+
         # Evaluate JS and return its value, with DOM nodes decoded to Dommy
         # objects (rather than the empty Hash a raw proxy becomes crossing to
         # Ruby). Accepts either an expression (`document.title`) or a statement

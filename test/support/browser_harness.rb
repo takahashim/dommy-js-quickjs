@@ -42,7 +42,7 @@ module Dommy
 
       def execute(js) = @runtime.execute(js)
       def evaluate(js) = @runtime.evaluate(js)
-      def load_script(path) = @runtime.execute(::File.read(path))
+      def load_script(path) = @runtime.load_script(::File.read(path))
 
       # Register/extend the fetch stub (url => { status:, body:, contentType: }).
       def stub_fetch(map)

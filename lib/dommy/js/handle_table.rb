@@ -34,6 +34,14 @@ module Dommy
         @by_handle.fetch(handle.to_i)
       end
 
+      # Tolerant lookup: nil when the handle is unknown (its object was released
+      # by GC, or a framework passed an invalid/never-allocated handle). Used for
+      # call ARGUMENTS, where a reference to a vanished object is simply absent —
+      # unlike a receiver handle, where a miss is a real error (#fetch).
+      def lookup(handle)
+        @by_handle[handle.to_i]
+      end
+
       # Forget a handle (called when its JS proxy is garbage-collected). Only
       # trims the mapping; the object itself lives on via its other references.
       def release(handle)
