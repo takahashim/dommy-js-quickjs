@@ -19,10 +19,10 @@ the DOM (turbo-stream + turbo-frame; see `test/dommy/js/test_turbo_integration.r
 
 ## Installation
 
-Not yet released. From git, in your `Gemfile`:
+In your `Gemfile`:
 
 ```ruby
-gem "dommy-js-quickjs", git: "https://github.com/takahashim/dommy-js-quickjs"
+gem "dommy-js-quickjs"
 ```
 
 ## Usage
@@ -47,6 +47,11 @@ win.document.query_selector(".title").text_content                 # => "Bye"
 - `execute(js)` — run statements for side effects; drains microtasks.
 - Timers ride Dommy's scheduler: `win.scheduler.advance_time(ms)` fires JS
   `setTimeout` / `setInterval` / `requestAnimationFrame` callbacks.
+- `run_until_idle` — drive the event loop to quiescence: drains microtasks, then
+  advances the scheduler to each due timer and drains again, in WHATWG order
+  (microtasks before each timer), until nothing is pending. The one-call
+  "settle everything" entry point after an eval (`max_iterations:` bounds
+  self-rescheduling timer loops).
 
 ## What the JS sees
 
@@ -114,8 +119,8 @@ require "dommy/js/quickjs/capybara"
 
 - **Deterministic scheduler, no wall clock.** Async work (timers, `requestAnimationFrame`,
   framework "next repaint" deferral) only advances via `win.scheduler.advance_time(ms)` —
-  drive it with `BrowserHarness#pump` or manually. Selenium-style `done()` /
-  real-time waits are not supported.
+  drive it with `Runtime#run_until_idle`, `BrowserHarness#pump`, or manually.
+  Selenium-style `done()` / real-time waits are not supported.
 - **`fetch` is stub-based** via Dommy's `__fetchy_stub__` (a `{ url => entry }` map);
   there is no real network.
 - **Event listeners must be functions** — `addEventListener("...", fn)` works

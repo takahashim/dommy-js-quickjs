@@ -15,9 +15,12 @@ Gem::Specification.new do |spec|
     property/method access into Dommy's __js_get__ / __js_set__ / __js_call__ ABI.
   DESC
   spec.homepage = "https://github.com/takahashim/dommy-js-quickjs"
+  spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/takahashim/dommy-js-quickjs"
+  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
+  spec.metadata["rubygems_mfa_required"] = "true"
 
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
@@ -32,8 +35,8 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "quickjs"
-  spec.add_dependency "dommy"
+  spec.add_dependency "quickjs", "~> 0.18.0"
+  spec.add_dependency "dommy", "~> 0.8.0"
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html
