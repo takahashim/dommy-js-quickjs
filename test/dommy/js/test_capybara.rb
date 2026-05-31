@@ -1,7 +1,16 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require "dommy/js/quickjs/capybara"
+
+# capybara-dommy isn't published yet, so it's only on the load path inside the
+# dommy monorepo. In a standalone clone, skip this file rather than aborting the
+# whole suite at load time.
+begin
+  require "dommy/js/quickjs/capybara"
+rescue LoadError
+  warn "skipping test_capybara.rb: capybara-dommy not available"
+  return
+end
 
 # Drives the real Capybara::Dommy::Driver with the JS adapter prepended, so
 # execute_script / evaluate_script run against the current Dommy document.

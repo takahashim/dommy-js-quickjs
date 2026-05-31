@@ -10,13 +10,19 @@ gem "rake", "~> 13.0"
 
 gem "minitest", "~> 5.16"
 
-# Local development: use the working trees from the dommy monorepo next door.
-gem "dommy", path: "../dommy/gems/dommy"
-
-# Dommy needs a parser backend at runtime; pick nokogiri for tests.
+# A parser backend for Dommy at runtime.
 gem "nokogiri"
 
-# Test-only: exercise the optional Capybara adapter end to end.
-gem "capybara"
-gem "capybara-dommy", path: "../dommy/gems/capybara-dommy"
-gem "dommy-rack", path: "../dommy/gems/dommy-rack"
+# In the dommy monorepo, use the working trees next door; a standalone clone
+# falls back to the released gems.
+dommy_gems = File.expand_path("../dommy/gems", __dir__)
+if File.directory?(dommy_gems)
+  gem "dommy", path: "#{dommy_gems}/dommy"
+
+  # Test-only Capybara integration (these gems are unpublished).
+  gem "capybara"
+  gem "capybara-dommy", path: "#{dommy_gems}/capybara-dommy"
+  gem "dommy-rack", path: "#{dommy_gems}/dommy-rack"
+else
+  gem "dommy"
+end
