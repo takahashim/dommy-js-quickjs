@@ -112,6 +112,94 @@ class Dommy::Js::TestFetchResponse < Minitest::Test
     assert_equal [0, false], @rt.evaluate("(() => { const r = Response.error(); return [r.status, r.ok]; })()")
   end
 
+  # WHATWG: an invalid header name / value throws a TypeError from JS.
+  def test_invalid_header_name_throws_type_error
+    name = @rt.evaluate(<<~JS)
+      (() => {
+        try { new Headers({ "Inv@lid": "x" }); return "no-throw"; }
+        catch (e) { return e.constructor.name; }
+      })()
+    JS
+    assert_equal "TypeError", name
+  end
+
+  def test_invalid_header_value_throws_type_error
+    name = @rt.evaluate(<<~JS)
+      (() => {
+        const h = new Headers();
+        try { h.set("X", "a\\r\\nInjected: 1"); return "no-throw"; }
+        catch (e) { return e.constructor.name; }
+      })()
+    JS
+    assert_equal "TypeError", name
+  end
+
+  # WHATWG: Set-Cookie is not combined; getSetCookie splits it.
+  def test_set_cookie_split
+    result = @rt.evaluate(<<~JS)
+      (() => {
+        const h = new Headers([["Set-Cookie", "a=1"], ["Set-Cookie", "b=2"]]);
+        return [h.getSetCookie(), h.get("set-cookie")];
+      })()
+    JS
+    assert_equal [["a=1", "b=2"], "a=1, b=2"], result
+  end
+
+  # WHATWG: Response.redirect parses the URL; an invalid one throws a TypeError.
+  def test_redirect_invalid_url_throws_type_error
+    name = @rt.evaluate(<<~JS)
+      (() => {
+        try { Response.redirect("http://", 302); return "no-throw"; }
+        catch (e) { return e.constructor.name; }
+      })()
+    JS
+    assert_equal "TypeError", name
+  end
+
+  # WHATWG: Response.error()/redirect() headers are immutable — mutation throws.
+  def test_error_headers_are_immutable
+    name = @rt.evaluate(<<~JS)
+      (() => {
+        try { Response.error().headers.set("X-A", "1"); return "no-throw"; }
+        catch (e) { return e.constructor.name; }
+      })()
+    JS
+    assert_equal "TypeError", name
+  end
+
+  # WHATWG: Response.json(undefined) / Response.json() is not serializable.
+  def test_json_undefined_throws_type_error
+    results = @rt.evaluate(<<~JS)
+      (() => {
+        const out = [];
+        for (const data of [undefined]) {
+          try { Response.json(data); out.push("no-throw"); }
+          catch (e) { out.push(e.constructor.name); }
+        }
+        try { Response.json(); out.push("no-throw"); }
+        catch (e) { out.push(e.constructor.name); }
+        return out;
+      })()
+    JS
+    assert_equal ["TypeError", "TypeError"], results
+  end
+
+  # JS null is serializable -> body "null".
+  def test_json_null_serializes
+    assert_equal "null", @rt.evaluate('(async () => await Response.json(null).text())()')
+  end
+
+  # WHATWG: an invalid statusText (control chars) throws a TypeError.
+  def test_invalid_status_text_throws_type_error
+    name = @rt.evaluate(<<~JS)
+      (() => {
+        try { new Response("x", { statusText: "bad\\r\\n" }); return "no-throw"; }
+        catch (e) { return e.constructor.name; }
+      })()
+    JS
+    assert_equal "TypeError", name
+  end
+
   # WHATWG Headers iterate sorted, lowercased.
   def test_headers_iterate_sorted_lowercased
     result = @rt.evaluate(<<~JS)
