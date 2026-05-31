@@ -293,6 +293,34 @@ class Dommy::Js::TestTurboIntegration < Minitest::Test
     assert_empty @h.errors, @h.error_report
   end
 
+  # Turbo Drive back/forward restoration: after visiting B from A, popstate
+  # (history.back/forward) triggers a restoration visit that swaps the cached
+  # snapshot back in — no refetch — and restores the URL.
+  def test_turbo_back_forward_restoration
+    load_page("<!DOCTYPE html><html><head><title>A</title></head>" \
+              "<body><p id='c'>PAGE-A</p></body></html>")
+    @h.stub_fetch("http://localhost/b" => {
+      "status" => 200, "contentType" => "text/html",
+      "body" => "<html><head><title>B</title></head><body><p id='c'>PAGE-B</p></body></html>"
+    })
+
+    @h.execute('Turbo.visit("/b");')
+    @h.pump(rounds: 40)
+    assert_equal "PAGE-B", @h.evaluate('document.getElementById("c").textContent')
+    assert_equal "http://localhost/b", @h.evaluate("String(location.href)")
+
+    @h.execute("history.back();")
+    @h.pump(rounds: 60)
+    assert_equal "http://localhost/", @h.evaluate("String(location.href)")
+    assert_equal "PAGE-A", @h.evaluate('document.getElementById("c").textContent')
+
+    @h.execute("history.forward();")
+    @h.pump(rounds: 60)
+    assert_equal "http://localhost/b", @h.evaluate("String(location.href)")
+    assert_equal "PAGE-B", @h.evaluate('document.getElementById("c").textContent')
+    assert_empty @h.errors, @h.error_report
+  end
+
   # Turbo dispatches its form lifecycle events (turbo:submit-start/end wrap the
   # request; turbo:before-fetch-request/response wrap the fetch).
   def test_turbo_form_lifecycle_events
