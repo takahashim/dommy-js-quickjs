@@ -85,6 +85,13 @@ module Dommy
           @backend.drain_microtasks
         end
 
+        # Handle-oriented JS access for a wasm guest (see WasmBridge). Memoized
+        # so the guest's `__rbWasmInvoke` dispatcher (installed via #on_invoke)
+        # stays registered for the VM's lifetime.
+        def wasm_bridge
+          @wasm_bridge ||= WasmBridge.new(@backend)
+        end
+
         # Drive the event loop to quiescence: drain the native microtask queue,
         # then advance the deterministic scheduler to its next due timer and drain
         # again, repeating until no timer is pending. This is the single
