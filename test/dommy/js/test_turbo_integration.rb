@@ -318,6 +318,97 @@ class Dommy::Js::TestTurboIntegration < Minitest::Test
     assert_empty @h.errors, @h.error_report
   end
 
+  # data-turbo-method turns a GET link into a non-GET request (DELETE here),
+  # whose turbo-stream response is applied.
+  def test_turbo_data_turbo_method
+    load_page("<!DOCTYPE html><html><head></head><body>" \
+              "<a id='lnk' href='/del' data-turbo-method='delete'>del</a><div id='m'></div></body></html>")
+    @h.stub_fetch("http://localhost/del" => {
+      "status" => 200, "contentType" => "text/vnd.turbo-stream.html",
+      "body" => '<turbo-stream action="append" target="m"><template><i>D</i></template></turbo-stream>'
+    })
+    @h.execute('document.getElementById("lnk").click();')
+    @h.pump(rounds: 40)
+
+    assert_equal "DELETE", @h.evaluate("window.__last_init__.method")
+    assert_equal "http://localhost/del", @h.evaluate("window.__last_url__")
+    assert_equal "<i>D</i>", @h.window.document.get_element_by_id("m").inner_html
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # A GET form (search form) navigates via Turbo Drive with the serialized
+  # query string appended to the action.
+  def test_turbo_get_form_navigation
+    load_page("<!DOCTYPE html><html><head></head><body>" \
+              "<form id='frm' action='/search' method='get'><input name='q' value='hi'><button>go</button></form>" \
+              "<p id='c'>HOME</p></body></html>")
+    @h.stub_fetch("http://localhost/search?q=hi" => {
+      "status" => 200, "contentType" => "text/html",
+      "body" => "<html><head><title>R</title></head><body><p id='c'>RESULTS</p></body></html>"
+    })
+    @h.execute('document.getElementById("frm").requestSubmit();')
+    @h.pump(rounds: 40)
+
+    assert_equal "RESULTS", @h.evaluate('document.getElementById("c").textContent')
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # Turbo follows a redirected response: it renders the redirect body AND
+  # updates history to the final (redirected) URL, not the requested one.
+  def test_turbo_follows_redirect
+    load_page("<!DOCTYPE html><html><head></head><body><a id='lnk' href='/old'>go</a><p id='c'>HOME</p></body></html>")
+    @h.stub_fetch("http://localhost/old" => {
+      "status" => 200, "contentType" => "text/html",
+      "redirected" => true, "url" => "http://localhost/new",
+      "body" => "<html><head><title>N</title></head><body><p id='c'>NEWPAGE</p></body></html>"
+    })
+    @h.execute('document.getElementById("lnk").click();')
+    @h.pump(rounds: 40)
+
+    assert_equal "NEWPAGE", @h.evaluate('document.getElementById("c").textContent')
+    assert_equal "http://localhost/new", @h.evaluate("String(Turbo.session.history.location)")
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # data-turbo-confirm prompts via window.confirm before issuing the request;
+  # a truthy answer lets it proceed.
+  def test_turbo_confirm_before_request
+    load_page("<!DOCTYPE html><html><head></head><body>" \
+              "<a id='lnk' href='/x' data-turbo-method='delete' data-turbo-confirm='Sure?'>del</a><div id='m'></div></body></html>")
+    @h.stub_fetch("http://localhost/x" => {
+      "status" => 200, "contentType" => "text/vnd.turbo-stream.html",
+      "body" => '<turbo-stream action="append" target="m"><template><i>OK</i></template></turbo-stream>'
+    })
+    @h.execute(<<~JS)
+      globalThis.__asked = [];
+      globalThis.confirm = (msg) => { globalThis.__asked.push(msg); return true; };
+      document.getElementById("lnk").click();
+    JS
+    @h.pump(rounds: 40)
+
+    assert_equal ["Sure?"], @h.evaluate("globalThis.__asked")
+    assert_equal "<i>OK</i>", @h.window.document.get_element_by_id("m").inner_html
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # turbo-frame loading="lazy" defers its src fetch until revealed; switching to
+  # loading="eager" loads it.
+  def test_turbo_frame_lazy_loading
+    load_page("<!DOCTYPE html><html><head></head><body>" \
+              "<turbo-frame id='f' src='/frame' loading='lazy'>placeholder</turbo-frame></body></html>")
+    @h.stub_fetch("http://localhost/frame" => {
+      "status" => 200, "contentType" => "text/html",
+      "body" => "<html><body><turbo-frame id='f'>LAZY-LOADED</turbo-frame></body></html>"
+    })
+    @h.pump(rounds: 40)
+    assert_equal "placeholder", @h.window.document.get_element_by_id("f").text_content.strip
+
+    @h.execute('document.getElementById("f").setAttribute("loading", "eager");')
+    @h.pump(rounds: 40)
+    assert_equal "LAZY-LOADED", @h.window.document.get_element_by_id("f").text_content.strip
+    assert_empty @h.errors, @h.error_report
+  end
+
   private
 
   def list_html

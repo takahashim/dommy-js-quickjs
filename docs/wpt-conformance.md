@@ -15,16 +15,37 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-31、encoding SharedArrayBuffer + ストリーミング BOM の後)
+## スナップショット (2026-05-31、pseudo-element drop + null/no-param の後)
 
 ```
-  dom        6788/7561  (89.8%)   — うち querySelector-All 1559/1977, Element-matches 536/672, dom/abort 34/37
+  dom        7049/7561  (93.2%)   — うち querySelector-All 1763/1977, Element-matches 593/672, dom/abort 34/37
   url        1390/1396  (99.6%)
   encoding    174/178   (97.8%)
   domparsing   68/100   (68.0%)
   html         64/95    (67.4%)
-  total      8484/9330  (90.9%)   — 97 ファイルが完全グリーン
+  total      8745/9330  (93.7%)   — 97 ファイルが完全グリーン
 ```
+
+> **セレクタの低リスク回収 → +81 subtests** (querySelector-All 1683→1763)。(1) **pseudo-element subject の節を
+> ドロップ** (+64): `SelectorParser` を拡張して節ごとに「subject が pseudo-element か」を追跡 (`::before`,
+> レガシー一コロン `:first-line` 等)、`matchable_selector` がそれらの節を除去 (全部なら `:not(*)`)。`backend_safe_selector`
+> に折り込んで全クエリ境界で適用 → pseudo-element は要素にマッチしないので空を返す (従来は Nokogiri が `::` を誤パース/
+> "Unregistered function" でエラー)。(2) **null/undefined の WebIDL 強制** (+8): `Internal.css_query_arg!` で
+> querySelector 引数を null→"null"・undefined→"undefined" 強制 (`<null>`/`<undefined>` 要素にマッチ)、no-arg は
+> TypeError。8つの JS dispatch 箇所を統一。(3) **iframe contentWindow に JS 組み込み公開** (+8): `exposeConstructorsOnWindow`
+> が TypeError/Array 等もミラー → `defaultView.TypeError` が解決 (no-param テストの `assert_throws_js(global.TypeError)`)。
+> 回帰ゼロ。残り querySelector ~214 はマッチングギャップ (名前空間, `:lang()`, `[attr=v i]`, 属性空値) = backend 限界。
+
+> **CSS セレクタ検証パーサ → +180 subtests** (querySelector-All 1559→1683、Element-matches 536→592)。
+> `Internal::SelectorParser` (新規、dommy gem) は CSS Selectors Level 4 文法の**バリデータ** — トークナイザ
+> + 再帰下降パーサで、無効なセレクタに `DOMException::SyntaxError` を投げる。Nokogiri が黙って受理する/誤った
+> エラーを出すケース (`[*=test]`, `..x`, `div % p`, `:::before`, `::example` 未知 pseudo-element, `ns|div`
+> 未宣言名前空間) を spec 通り弾く。`Internal.validate_selector!` のヒューリスティックを置換。**マッチングは
+> Nokogiri のまま**なので回帰リスクほぼゼロ。WPT の selectors.js から抽出した 34 無効 + 207 有効リストの
+> 両方に対して検証 (34/34 拒否, 207/207 受理)。CSS の「EOF は開いた `[`/`(`/文字列を暗黙に閉じる」規則も実装
+> (`[align="center"`, `::slotted(foo` は有効)。残りの querySelector 失敗 (~294) はマッチングギャップ
+> (名前空間マッチ, `:lang()`, `[attr=v i]` 大小区別フラグ, pseudo-element がマッチしない検証, 属性空値エッジ)
+> = Nokogiri バックエンドの限界で、将来このパーサの AST をカスタムマッチャに使えば解消可能。
 
 > **encoding を 118→174/178 (97.8%) に +56** (encodeInto 56→110/111、textdecoder-copy 0→2、
 > encoding 全体 +56)。(1) **WebAssembly.Memory polyfill** (`runtime.rb` の
