@@ -27,6 +27,7 @@ module Dommy
         # already works via the Window manifest; this also wires the unqualified
         # globals browsers expose.
         def install_window(win)
+          @window = win
           define_host_object("window", win)
           @bridge.window = win
           @backend.eval(<<~JS)
@@ -82,6 +83,29 @@ module Dommy
 
         def drain_microtasks
           @backend.drain_microtasks
+        end
+
+        # Drive the event loop to quiescence: drain the native microtask queue,
+        # then advance the deterministic scheduler to its next due timer and drain
+        # again, repeating until no timer is pending. This is the single
+        # deterministic "settle everything" entry point a host uses after an eval
+        # (mirroring a `drain_async!`): every queued microtask runs and every
+        # scheduled timer fires, in WHATWG order (microtasks before each timer).
+        # `max_iterations` bounds runaway timer loops (e.g. a self-rescheduling
+        # setInterval).
+        def run_until_idle(max_iterations: 1000)
+          sched = @window&.scheduler
+          max_iterations.times do
+            drain_microtasks
+            break unless sched
+
+            next_at = sched.next_due_timer_at
+            break unless next_at
+
+            sched.advance_time(next_at - sched.now_ms)
+            drain_microtasks
+          end
+          self
         end
 
         # Surface otherwise-swallowed JS promise rejections (see Backend).

@@ -79,7 +79,7 @@ module Dommy
         # Seeding them creates the global; construction routes to the window.
         %w[MutationObserver], %w[IntersectionObserver], %w[ResizeObserver],
         %w[PerformanceObserver], %w[AbortController], %w[AbortSignal EventTarget],
-        %w[FormData], %w[URL], %w[URLSearchParams], %w[Headers], %w[Request],
+        %w[FormData], %w[URL], %w[URLSearchParams], %w[Headers], %w[Request], %w[Response],
         %w[Blob], %w[File], %w[FileList], %w[FileReader], %w[XMLHttpRequest],
         %w[TextEncoder], %w[TextDecoder], %w[DOMParser], %w[XMLSerializer],
         %w[MessageChannel], %w[BroadcastChannel], %w[WebSocket], %w[EventSource],

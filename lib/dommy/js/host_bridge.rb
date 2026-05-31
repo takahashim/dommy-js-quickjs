@@ -256,6 +256,9 @@ module Dommy
         # so rehydrate rethrows a real `TypeError` — `assert_throws_js(TypeError,
         # …)` checks `instanceof TypeError`, which a DOMException/Error fails.
         {"__rb_exception__" => {"name" => "TypeError", "message" => e.message, "js_native" => true}}
+      rescue Dommy::Bridge::RangeError => e
+        # A spec-mandated JS RangeError (e.g. `new Response(b, {status: 42})`).
+        {"__rb_exception__" => {"name" => "RangeError", "message" => e.message, "js_native" => true}}
       end
 
       # Ruby -> JS: tag bridge-able objects so the JS side can proxy them.
