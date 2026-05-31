@@ -437,7 +437,46 @@ class Dommy::Js::TestTurboIntegration < Minitest::Test
     assert_empty @h.errors, @h.error_report
   end
 
+  # <turbo-stream-source src="/sse">: on connect Turbo opens an EventSource and
+  # listens for "message" events; a pushed message whose data is a turbo-stream
+  # is applied. We drive a server push by dispatching a MessageEvent to the
+  # captured source.
+  def test_turbo_stream_source_sse
+    load_page("<!DOCTYPE html><html><head></head><body><div id='list'></div></body></html>")
+    push_stream_via_source("/sse", "EventSource", "<p>SSE-MSG</p>")
+    assert_equal "<p>SSE-MSG</p>", list_html
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # A ws:// source uses WebSocket instead of EventSource; same message delivery.
+  def test_turbo_stream_source_websocket
+    load_page("<!DOCTYPE html><html><head></head><body><div id='list'></div></body></html>")
+    push_stream_via_source("ws://localhost/cable", "WebSocket", "<p>WS-MSG</p>")
+    assert_equal "<p>WS-MSG</p>", list_html
+    assert_empty @h.errors, @h.error_report
+  end
+
   private
+
+  # Connect a <turbo-stream-source src=...>, capturing the EventSource/WebSocket
+  # it opens, then dispatch a "message" MessageEvent carrying a turbo-stream that
+  # appends `inner` to #list — mimicking a server push.
+  def push_stream_via_source(src, source_ctor, inner)
+    @h.execute(<<~JS)
+      globalThis.__src = [];
+      const _C = globalThis.#{source_ctor};
+      globalThis.#{source_ctor} = function (url, opts) { const c = new _C(url, opts); globalThis.__src.push(c); return c; };
+      const el = document.createElement("turbo-stream-source");
+      el.setAttribute("src", #{src.inspect});
+      document.body.appendChild(el);
+    JS
+    @h.pump(rounds: 10)
+    @h.execute(
+      "globalThis.__src[0].dispatchEvent(new MessageEvent('message', { data: " \
+      "'<turbo-stream action=\"append\" target=\"list\"><template>#{inner}</template></turbo-stream>' }));"
+    )
+    @h.pump(rounds: 10)
+  end
 
   def list_html
     @h.window.document.get_element_by_id("list").inner_html
