@@ -61,18 +61,17 @@ class Dommy::Js::TestFetchResponse < Minitest::Test
     assert_equal "TypeError", name
   end
 
-  # response.arrayBuffer() resolves to a typed-array byte buffer (a BufferSource
-  # with a real byteLength), not a plain JS array. The bridge marshals all host
-  # byte buffers to Uint8Array uniformly (as TextEncoder.encode / Blob do), so
-  # the value is a Uint8Array view rather than a bare ArrayBuffer.
-  def test_array_buffer_is_a_typed_array_buffer
+  # response.arrayBuffer() resolves to a real (bare) ArrayBuffer — its spec
+  # return type — not a Uint8Array view or a plain JS array.
+  def test_array_buffer_is_a_real_array_buffer
     result = @rt.evaluate(<<~JS)
       (async () => {
         const buf = await new Response("AB").arrayBuffer();
-        return [ArrayBuffer.isView(buf), buf.byteLength, Array.from(new Uint8Array(buf.buffer))];
+        return [buf instanceof ArrayBuffer, ArrayBuffer.isView(buf),
+                buf.byteLength, Array.from(new Uint8Array(buf))];
       })()
     JS
-    assert_equal [true, 2, [65, 66]], result
+    assert_equal [true, false, 2, [65, 66]], result
   end
 
   # Static Response.json(data, init).
@@ -266,5 +265,66 @@ class Dommy::Js::TestFetchResponse < Minitest::Test
     JS
     @rt.run_until_idle
     assert_equal "AbortError", @rt.evaluate("S.outcome")
+  end
+
+  # WHATWG: response.body is a ReadableStream whose reader yields the bytes.
+  def test_body_is_readable_stream
+    result = @rt.evaluate(<<~JS)
+      (async () => {
+        const r = new Response("hello");
+        const isStream = r.body instanceof ReadableStream;
+        const identity = r.body === r.body; // getting .body does not consume
+        const reader = r.body.getReader();
+        const { value, done } = await reader.read();
+        const text = new TextDecoder().decode(value);
+        const next = await reader.read();
+        return [isStream, identity, text, done, next.done];
+      })()
+    JS
+    assert_equal [true, true, "hello", false, true], result
+  end
+
+  # A null-body response (204) has a null body.
+  def test_null_body_is_null
+    assert_equal true, @rt.evaluate("new Response(null, { status: 204 }).body === null")
+  end
+
+  # WHATWG: bodyUsed tracks consumption; a second consume rejects.
+  def test_body_used_and_double_consume_rejects
+    result = @rt.evaluate(<<~JS)
+      (async () => {
+        const r = new Response("x");
+        const before = r.bodyUsed;
+        await r.text();
+        const after = r.bodyUsed;
+        let secondErr = "no-throw";
+        try { await r.text(); } catch (e) { secondErr = e.name; }
+        return [before, after, secondErr];
+      })()
+    JS
+    assert_equal [false, true, "TypeError"], result
+  end
+
+  # response.type — "default" for constructed, "error" for Response.error().
+  def test_response_type
+    assert_equal ["default", "error"],
+      @rt.evaluate('[new Response("x").type, Response.error().type]')
+  end
+
+  # WHATWG "extract a body": a Blob body uses its bytes + MIME type; a
+  # URLSearchParams body serializes to urlencoded with the matching type.
+  def test_non_string_body_extraction
+    result = @rt.evaluate(<<~JS)
+      (async () => {
+        const blobResp = new Response(new Blob(["hi"], { type: "text/markdown" }));
+        const uspResp = new Response(new URLSearchParams({ a: "1", b: "2" }));
+        return [
+          await blobResp.text(), blobResp.headers.get("Content-Type"),
+          await uspResp.text(), uspResp.headers.get("Content-Type"),
+        ];
+      })()
+    JS
+    assert_equal ["hi", "text/markdown", "a=1&b=2",
+                  "application/x-www-form-urlencoded;charset=UTF-8"], result
   end
 end

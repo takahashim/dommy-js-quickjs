@@ -270,6 +270,11 @@ module Dommy
         if defined?(Dommy::Bridge::UNDEFINED) && value.equal?(Dommy::Bridge::UNDEFINED)
           return {"__rb_undefined" => true}
         end
+        # A byte buffer tagged ArrayBuffer crosses back as a bare ArrayBuffer
+        # (checked before Bytes, since ArrayBuffer < Bytes).
+        if defined?(Dommy::Bridge::ArrayBuffer) && value.is_a?(Dommy::Bridge::ArrayBuffer)
+          return {"__rb_arraybuffer" => value.to_a}
+        end
         # A byte buffer crosses back as a JS Uint8Array.
         if defined?(Dommy::Bridge::Bytes) && value.is_a?(Dommy::Bridge::Bytes)
           return {"__rb_bytes" => value.to_a}
