@@ -39,6 +39,7 @@ module Dommy
         @backend = backend
         @handles = HandleTable.new
         @callback_objects = {}
+        @listener_objects = {}
         @constructors = ConstructorRegistry.new
         @custom_elements = CustomElements.new(self)
         @microtask_procs = {}
@@ -73,6 +74,11 @@ module Dommy
         # Promise.resolve()`, batching several mutations into one callback).
         if win.respond_to?(:scheduler) && win.scheduler.respond_to?(:native_microtask_scheduler=)
           win.scheduler.native_microtask_scheduler = ->(callback) { schedule_native_microtask(callback) }
+        end
+        # Let a classic <script> inserted into the document execute (Dommy has no
+        # JS engine; it calls back here to run the body in global scope).
+        if win.respond_to?(:document) && win.document.respond_to?(:script_runner=)
+          win.document.script_runner = ->(source) { @backend.call_js("__rbHost.runScript", source.to_s) }
         end
       end
 
@@ -116,6 +122,12 @@ module Dommy
       # `fetch().then(r => r.json()).then(…)` chains).
       def invoke_callback(id, args, this_arg = nil)
         unwrap(@backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg)))
+      end
+
+      # Invoke a JS EventListener *object*'s handleEvent (see HostEventListener),
+      # passing the dispatched event as a proxy.
+      def invoke_js_ref_handle_event(ref, event)
+        unwrap(@backend.call_js("__rbHost.invokeJsRefHandleEvent", ref, wrap(event)))
       end
 
       # Turn a JS-side tagged value (produced by __rbHost.tag) back into Ruby:
@@ -283,6 +295,11 @@ module Dommy
         if defined?(Dommy::Bridge::JSValue) && value.is_a?(Dommy::Bridge::JSValue)
           return {"__rb_js_ref" => value.ref}
         end
+        # A JS EventListener object wrapped on the way in returns as that same JS
+        # object (so removeEventListener(el, this) reaches the right listener).
+        if value.is_a?(HostEventListener)
+          return {"__rb_js_ref" => value.ref}
+        end
 
         case value
         when Array
@@ -323,11 +340,18 @@ module Dommy
             id = value["__rb_callback"]
             @callback_objects[id] ||= HostCallback.new(self, id)
           elsif value.key?("__rb_js_ref")
-            # An opaque JS value (a non-plain object Ruby just stores and returns,
-            # e.g. an abort reason) — kept as a handle so it round-trips with
-            # identity rather than being flattened to a Hash.
-            if defined?(Dommy::Bridge::JSValue)
-              Dommy::Bridge::JSValue.new(value["__rb_js_ref"], value["__rb_js_label"])
+            ref = value["__rb_js_ref"]
+            if value["__rb_handle_event"]
+              # A JS object implementing EventListener (handleEvent). Wrap it as a
+              # Ruby listener whose #handle_event routes back to its handleEvent.
+              # Memoized by ref so the same JS object yields the same wrapper,
+              # letting removeEventListener match the listener by identity.
+              @listener_objects[ref] ||= HostEventListener.new(self, ref, value["__rb_js_label"])
+            elsif defined?(Dommy::Bridge::JSValue)
+              # An opaque JS value (a non-plain object Ruby just stores and
+              # returns, e.g. an abort reason) — kept as a handle so it
+              # round-trips with identity rather than being flattened to a Hash.
+              Dommy::Bridge::JSValue.new(ref, value["__rb_js_label"])
             else
               value
             end
@@ -394,6 +418,25 @@ module Dommy
       # `this` is the currentTarget.
       def __js_call_with_this__(args, this_arg)
         @bridge.invoke_callback(@id, args, this_arg)
+      end
+    end
+
+    # An event listener backed by a live JS *object* implementing the
+    # EventListener interface (a `handleEvent` method, e.g. Stimulus's action
+    # listeners). Implements #handle_event so Dommy's invoke_listener routes to
+    # the object's handleEvent (with `this` bound to the object). Holds the
+    # JS-side ref so it also wraps back to the same JS object (identity kept).
+    class HostEventListener
+      attr_reader :ref
+
+      def initialize(bridge, ref, label = nil)
+        @bridge = bridge
+        @ref = ref
+        @label = label
+      end
+
+      def handle_event(event)
+        @bridge.invoke_js_ref_handle_event(@ref, event)
       end
     end
   end

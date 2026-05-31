@@ -85,6 +85,20 @@ module Dommy
           @backend.drain_microtasks
         end
 
+        # Drive the document lifecycle: set `document.readyState` and fire the
+        # milestone events (`readystatechange`, then `DOMContentLoaded` on
+        # "interactive" / `load` on "complete"), then drain microtasks so the
+        # listeners settle. Lets a host replay the real load sequence so code
+        # that waits on document readiness (framework startup, `ready` handlers)
+        # runs the deferred path. The document defaults to "complete", so call
+        # `set_document_ready_state("loading")` BEFORE loading such code to
+        # exercise the waiting path.
+        def set_document_ready_state(state)
+          @window&.document&.__internal_set_ready_state__(state)
+          drain_microtasks
+          self
+        end
+
         # Handle-oriented JS access for a wasm guest (see WasmBridge). Memoized
         # so the guest's `__rbWasmInvoke` dispatcher (installed via #on_invoke)
         # stays registered for the VM's lifetime.

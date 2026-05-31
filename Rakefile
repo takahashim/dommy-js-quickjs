@@ -47,3 +47,50 @@ namespace :wpt do
          "#{file_ok} files fully green#{blocked.empty? ? "" : ", #{blocked.size} errored"}"
   end
 end
+
+namespace :stimulus do
+  desc "Run @hotwired/stimulus's QUnit suite against the bridge and report a conformance rate"
+  task :conformance, [:filter] do |_t, args|
+    $LOAD_PATH.unshift File.expand_path("test", __dir__)
+    require "test_helper"
+    require "support/stimulus_conformance"
+
+    runner = Dommy::Js::StimulusConformance
+    unless runner.available?
+      abort "Stimulus suite not vendored. Build it: script/build_stimulus_tests.sh"
+    end
+
+    manifest = runner.manifest
+    manifest = manifest.select { |t| t["module"].match?(/#{args[:filter]}/i) } if args[:filter]
+
+    # Run each test in its own VM, grouping the printed output by module.
+    by_module = Hash.new { |h, k| h[k] = [] }
+    failures = []
+    manifest.each do |t|
+      r = runner.run_test(t["module"], t["name"])
+      by_module[t["module"]] << r
+    rescue => e
+      puts "  ✗ #{t["module"]} :: #{t["name"]}  (errored: #{e.class}: #{e.message[0, 70]})"
+    end
+
+    total_pass = total_runnable = total = 0
+    by_module.each do |mod, results|
+      pass = results.count(&:pass?)
+      runnable = results.count(&:runnable?)
+      total_pass += pass
+      total_runnable += runnable
+      total += results.size
+      flag = runnable.positive? && pass == runnable ? "✓" : " "
+      printf("  %s %-42s %3d/%-3d\n", flag, mod, pass, runnable)
+      results.reject { |r| r.pass? || r.skip? || r.todo? }.each do |r|
+        failures << r
+        puts "        #{r.to_s[0, 120]}"
+      end
+    end
+
+    pct = total_runnable.zero? ? 0 : (100.0 * total_pass / total_runnable).round(1)
+    puts
+    puts "Stimulus conformance: #{total_pass}/#{total_runnable} runnable tests (#{pct}%) " \
+         "across #{by_module.size} modules; #{total - total_runnable} skipped/todo, #{failures.size} failing"
+  end
+end

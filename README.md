@@ -14,8 +14,12 @@ The bridge presents a **spec-shaped JS DOM**, not bare proxies: `instanceof`,
 prototype chains, `Object.prototype.toString` brands, constructable interfaces
 (`new Event(...)`), custom elements (`class extends HTMLElement`), live
 collections, and expandos all work — enough that the real
-[`@hotwired/turbo`](https://github.com/hotwired/turbo) bundle loads and drives
-the DOM (turbo-stream + turbo-frame; see `test/dommy/js/test_turbo_integration.rb`).
+[`@hotwired/turbo`](https://github.com/hotwired/turbo) and
+[`@hotwired/stimulus`](https://github.com/hotwired/stimulus) bundles load and
+drive the DOM (turbo-stream + turbo-frame; Stimulus controllers, targets,
+values, classes, actions, and outlets — see
+`test/dommy/js/test_turbo_integration.rb` and
+`test/dommy/js/test_stimulus_integration.rb`).
 
 ## Installation
 
@@ -123,9 +127,9 @@ require "dommy/js/quickjs/capybara"
   Selenium-style `done()` / real-time waits are not supported.
 - **`fetch` is stub-based** via Dommy's `__fetchy_stub__` (a `{ url => entry }` map);
   there is no real network.
-- **Event listeners must be functions** — `addEventListener("...", fn)` works
-  (closures intact; `removeEventListener` with the same function detaches it), but
-  the `{ handleEvent }` object form is not.
+- **Event listeners** — both forms work: a function (`addEventListener("...", fn)`,
+  closures intact) and the EventListener *object* form (`{ handleEvent }`, used by
+  Stimulus). `removeEventListener` detaches by the same function/object identity.
 - **Expandos are scoped to elements**, and the JS callback table is not evicted, so
   a very long-lived VM can grow unbounded.
 - **DOM coverage is Dommy's.** A JS method/property works only where Dommy exposes
@@ -137,13 +141,29 @@ require "dommy/js/quickjs/capybara"
 Run `bin/setup` to install dependencies, then `rake test`. `bin/console` opens an
 interactive prompt.
 
-The real-framework integration test (`test_turbo_integration.rb`) is skipped
-unless the Turbo bundle is vendored at `test/fixtures/turbo.umd.js`:
+The real-framework integration tests are skipped unless their bundle is
+vendored under `test/fixtures/`:
 
 ```bash
 curl -sL https://unpkg.com/@hotwired/turbo@8/dist/turbo.es2017-umd.js \
   -o test/fixtures/turbo.umd.js
+curl -sL https://unpkg.com/@hotwired/stimulus@3/dist/stimulus.umd.js \
+  -o test/fixtures/stimulus.umd.js
 ```
+
+### Conformance suites
+
+Two tasks run real third-party test corpora against the bridge and report a
+pass rate — the lens that pins how faithfully the bridge hosts the platform:
+
+```bash
+rake wpt:conformance[filter]        # Web Platform Tests (vendored under test/fixtures/wpt)
+rake stimulus:conformance[filter]   # @hotwired/stimulus's own QUnit suite
+```
+
+The Stimulus suite is vendored as a single bundle (`test/fixtures/
+stimulus-tests.umd.js`) run through a small QUnit shim; each test runs in its
+own fresh VM. Regenerate the bundle with `script/build_stimulus_tests.sh`.
 
 ## Contributing
 
