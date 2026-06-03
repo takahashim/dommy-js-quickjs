@@ -301,6 +301,15 @@ module Dommy
           return {"__rb_js_ref" => value.ref}
         end
 
+        # A host collection that subclasses Array (e.g. Dommy::NodeList < Array)
+        # must cross as a proxy carrying its DOM interface — so `instanceof
+        # NodeList`, `.item()` and the NodeList iterator work — rather than being
+        # flattened to a plain JS array by the `when Array` branch below. Plain
+        # Arrays (not bridgeable) still map element-wise.
+        if value.is_a?(Array) && bridgeable?(value)
+          return {"__rb_handle" => @handles.register(value)}
+        end
+
         case value
         when Array
           value.map { |element| wrap(element) }

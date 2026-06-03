@@ -51,9 +51,11 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal true, @rt.evaluate('document.querySelector("h1") === document.querySelector("h1")')
   end
 
-  # querySelectorAll (NodeList) arrives in JS as an array of child proxies
-  def test_query_selector_all_returns_array
-    js = 'document.querySelectorAll("h1, .primary").map(n => n.tagName).join(",")'
+  # querySelectorAll returns a NodeList (per spec / WPT), not an Array — it is
+  # iterable and indexable but has no Array methods, so callers spread it first.
+  def test_query_selector_all_returns_node_list
+    assert_equal true, @rt.evaluate('document.querySelectorAll("h1, .primary") instanceof NodeList')
+    js = '[...document.querySelectorAll("h1, .primary")].map(n => n.tagName).join(",")'
     assert_equal "H1,BUTTON", @rt.evaluate(js)
   end
 
@@ -450,8 +452,9 @@ class Dommy::Js::TestQuickjs < Minitest::Test
   # querySelectorAll already crosses as a real array (Dommy::NodeList < Array).
   def test_query_selector_all_array_methods
     @win.document.query_selector("#root").inner_html = "<h1>A</h1><p>B</p>"
+    # A NodeList is spread into an Array for Array methods (as in real browsers).
     assert_equal "H1,P",
-      @rt.evaluate('document.querySelectorAll("#root *").map(n => n.tagName).join(",")')
+      @rt.evaluate('[...document.querySelectorAll("#root *")].map(n => n.tagName).join(",")')
   end
 
   # (A) Node traversal is exposed: childNodes (live), firstChild, siblings.
