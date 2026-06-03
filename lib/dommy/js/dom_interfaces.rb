@@ -65,6 +65,9 @@ module Dommy
         %w[Comment CharacterData Node EventTarget],
         %w[Document Node EventTarget],
         %w[DocumentFragment Node EventTarget],
+        # ShadowRoot is a DocumentFragment subclass; seeded so bare `node
+        # instanceof ShadowRoot` (Alpine.js walks the tree with this) resolves.
+        %w[ShadowRoot DocumentFragment Node EventTarget],
         %w[DocumentType Node EventTarget],
         %w[Attr Node EventTarget],
         %w[Event],
@@ -86,6 +89,12 @@ module Dommy
         %w[Notification], %w[Worker], %w[DataTransfer],
         %w[ReadableStream], %w[WritableStream], %w[TransformStream],
         %w[Range],
+        # CSSOM stylesheet interfaces. Seeded so `style instanceof CSSStyleSheet`
+        # resolves: Lit's css-tag runs that check while deciding whether to use
+        # constructable stylesheets; with the interface present but
+        # `adoptedStyleSheets` unsupported it falls back to injecting a <style>
+        # element, which Dommy handles.
+        %w[CSSStyleSheet StyleSheet], %w[StyleSheet],
         # Collection interfaces, seeded so `result instanceof NodeList` /
         # `instanceof HTMLCollection` resolve (querySelectorAll, children, …).
         %w[NodeList], %w[HTMLCollection],
