@@ -121,13 +121,45 @@ module Dommy
       # PromiseValue, otherwise Dommy can't adopt it (breaking
       # `fetch().then(r => r.json()).then(…)` chains).
       def invoke_callback(id, args, this_arg = nil)
-        unwrap(@backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg)))
+        raw = @backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg))
+        # A throwing callback is reported back tagged. By default we swallow it
+        # (event listeners / observers / timers must not let a callback error
+        # escape their dispatch), matching the historical behavior.
+        return nil if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
+
+        unwrap(raw)
+      end
+
+      # Like invoke_callback, but a throwing callback re-raises the thrown value
+      # (as a ThrowValue dom_guard rethrows verbatim) instead of being swallowed.
+      # Used where the spec requires the exception to propagate — a NodeFilter
+      # whose error must surface out of the traversal method that ran it.
+      def invoke_callback_raising(id, args, this_arg = nil)
+        raw = @backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg))
+        if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
+          raise Dommy::Bridge::ThrowValue.new(unwrap(raw["__rb_cb_threw__"]))
+        end
+
+        unwrap(raw)
       end
 
       # Invoke a JS EventListener *object*'s handleEvent (see HostEventListener),
       # passing the dispatched event as a proxy.
       def invoke_js_ref_handle_event(ref, event)
         unwrap(@backend.call_js("__rbHost.invokeJsRefHandleEvent", ref, wrap(event)))
+      end
+
+      # Invoke a JS NodeFilter object's acceptNode (see HostNodeFilter). `raising`
+      # re-raises a thrown value (the traversal must propagate it) rather than
+      # swallowing it.
+      def invoke_js_ref_accept_node(ref, node, raising: false)
+        raw = @backend.call_js("__rbHost.invokeJsRefAcceptNode", ref, wrap(node))
+        if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
+          raise Dommy::Bridge::ThrowValue.new(unwrap(raw["__rb_cb_threw__"])) if raising
+
+          return nil
+        end
+        unwrap(raw)
       end
 
       # Turn a JS-side tagged value (produced by __rbHost.tag) back into Ruby:
@@ -359,6 +391,11 @@ module Dommy
               # Memoized by ref so the same JS object yields the same wrapper,
               # letting removeEventListener match the listener by identity.
               @listener_objects[ref] ||= HostEventListener.new(self, ref, value["__rb_js_label"])
+            elsif value["__rb_accept_node"]
+              # A NodeFilter callback-interface object. Wrap it so a traversal
+              # invokes acceptNode on the live JS object (fresh getter, this =
+              # object, exceptions propagated).
+              (@filter_objects ||= {})[ref] ||= HostNodeFilter.new(self, ref)
             elsif defined?(Dommy::Bridge::JSValue)
               # An opaque JS value (a non-plain object Ruby just stores and
               # returns, e.g. an abort reason) — kept as a handle so it
@@ -431,6 +468,12 @@ module Dommy
       def __js_call_with_this__(args, this_arg)
         @bridge.invoke_callback(@id, args, this_arg)
       end
+
+      # Invoke and re-raise a thrown value instead of swallowing it — for a
+      # NodeFilter, whose exception must propagate out of the traversal method.
+      def __js_call_with_raise__(args)
+        @bridge.invoke_callback_raising(@id, args)
+      end
     end
 
     # An event listener backed by a live JS *object* implementing the
@@ -449,6 +492,27 @@ module Dommy
 
       def handle_event(event)
         @bridge.invoke_js_ref_handle_event(@ref, event)
+      end
+    end
+
+    # A NodeFilter backed by a live JS object implementing the callback interface
+    # (`{ acceptNode }`). TreeWalker/NodeIterator treat it as the filter callable;
+    # each invocation runs acceptNode on the JS object (this = object), and the
+    # raising variant lets the filter's exception propagate out of the traversal.
+    class HostNodeFilter
+      attr_reader :ref
+
+      def initialize(bridge, ref)
+        @bridge = bridge
+        @ref = ref
+      end
+
+      def __js_call__(_method, args)
+        @bridge.invoke_js_ref_accept_node(@ref, args[0])
+      end
+
+      def __js_call_with_raise__(args)
+        @bridge.invoke_js_ref_accept_node(@ref, args[0], raising: true)
       end
     end
   end
