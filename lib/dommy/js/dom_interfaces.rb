@@ -104,6 +104,10 @@ module Dommy
         # Concrete HTML element interfaces (see HTML_LEAF_INTERFACES) + the media
         # subtree, so bare `instanceof HTMLInputElement` always resolves.
         *HTML_LEAF_INTERFACES.map { |n| [n, "HTMLElement", "Element", "Node", "EventTarget"] },
+        # createElementNS with an unrecognized HTML-namespace local name yields an
+        # HTMLUnknownElement; seed it so a bare `instanceof HTMLUnknownElement`
+        # resolves even before such an element crosses.
+        %w[HTMLUnknownElement HTMLElement Element Node EventTarget],
         %w[HTMLMediaElement HTMLElement Element Node EventTarget],
         %w[HTMLAudioElement HTMLMediaElement HTMLElement Element Node EventTarget],
         %w[HTMLVideoElement HTMLMediaElement HTMLElement Element Node EventTarget]
