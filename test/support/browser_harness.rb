@@ -73,11 +73,15 @@ module Dommy
         @window.document.query_selector_all("iframe").each do |iframe|
           next if iframe.content_document
 
-          markup = @iframe_content[iframe.get_attribute("src").to_s.sub(/#.*\z/, "")]
+          src = iframe.get_attribute("src").to_s
+          markup = @iframe_content[src.sub(/#.*\z/, "")]
           next unless markup
 
           sub = Dommy.parse(markup)
           sub.document.default_view = sub
+          # Carry the URL fragment onto the nested window's location so `:target`
+          # (and location.hash) resolve in the framed document.
+          sub.location.__internal_set_url__(src) if src.include?("#")
           iframe.__internal_set_content_document__(sub.document)
           @runtime.expose_constructors_on(sub)
           @iframe_windows << sub
