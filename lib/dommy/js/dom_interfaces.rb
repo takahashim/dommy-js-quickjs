@@ -128,6 +128,13 @@ module Dommy
       # superclass. Stops at the first foreign superclass (Object, or
       # StandardError for DOMException) so non-DOM ancestors stay out.
       def chain_for(obj)
+        # WHATWG models DOMException as a single interface distinguished by its
+        # `name` property — there are no per-name subclasses. Collapse Dommy's
+        # convenience subclasses (AbortError < DOMException) to the one interface
+        # so a DOMException crossing as a value (e.g. `signal.reason`) reports
+        # `constructor === DOMException`, which assert_throws_dom checks.
+        return ["DOMException"] if defined?(Dommy::DOMException) && obj.is_a?(Dommy::DOMException)
+
         names = []
         klass = obj.class
         while klass && klass.name&.start_with?("Dommy::")
