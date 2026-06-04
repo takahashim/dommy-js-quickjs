@@ -342,7 +342,7 @@ class Dommy::Js::TestReactIntegration < Minitest::Test
         React.createElement('svg', { id: 'svg' }, React.createElement('circle', { cx: 5, cy: 5, r: 5 })),
         React.createElement('div', { id: 'raw', dangerouslySetInnerHTML: { __html: '<b>bold</b>' } }))
     JS
-    assert_equal "color:red;font-size:12px", @h.window.document.get_element_by_id("styled").get_attribute("style")
+    assert_equal "color: red; font-size: 12px;", @h.window.document.get_element_by_id("styled").get_attribute("style")
     assert_equal "http://www.w3.org/2000/svg", @h.evaluate("document.getElementById('svg').namespaceURI")
     assert_equal "<b>bold</b>", @h.window.document.get_element_by_id("raw").inner_html
     assert_empty @h.errors, @h.error_report

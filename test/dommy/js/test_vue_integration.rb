@@ -225,7 +225,7 @@ class Dommy::Js::TestVueIntegration < Minitest::Test
     mount("globalThis.__C")
     box = doc.get_element_by_id("box")
     assert_equal "active", box.get_attribute("class")
-    assert_equal "color:red", box.get_attribute("style")
+    assert_equal "color: red;", box.get_attribute("style")
     assert_equal "", @h.evaluate("document.getElementById('box').style.display")
 
     # v-show toggles the inline display style off when the condition is false.

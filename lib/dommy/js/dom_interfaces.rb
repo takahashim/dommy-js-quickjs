@@ -74,6 +74,7 @@ module Dommy
         %w[CustomEvent Event],
         %w[MessageEvent Event],
         %w[PopStateEvent Event],
+        %w[HashChangeEvent Event],
         %w[CloseEvent Event],
         %w[MouseEvent Event],
         %w[KeyboardEvent Event],
