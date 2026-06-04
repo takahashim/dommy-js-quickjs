@@ -120,27 +120,13 @@ module Dommy
       # a callback that returns e.g. a Promise proxy must come back as the live
       # PromiseValue, otherwise Dommy can't adopt it (breaking
       # `fetch().then(r => r.json()).then(…)` chains).
-      def invoke_callback(id, args, this_arg = nil)
-        raw = @backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg))
-        # A throwing callback is reported back tagged. By default we swallow it
-        # (event listeners / observers / timers must not let a callback error
-        # escape their dispatch), matching the historical behavior.
-        return nil if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
-
-        unwrap(raw)
-      end
-
-      # Like invoke_callback, but a throwing callback re-raises the thrown value
-      # (as a ThrowValue dom_guard rethrows verbatim) instead of being swallowed.
-      # Used where the spec requires the exception to propagate — a NodeFilter
-      # whose error must surface out of the traversal method that ran it.
-      def invoke_callback_raising(id, args, this_arg = nil)
-        raw = @backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg))
-        if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
-          raise Dommy::Bridge::ThrowValue.new(unwrap(raw["__rb_cb_threw__"]))
-        end
-
-        unwrap(raw)
+      # `raising: true` re-raises a thrown value (as a ThrowValue dom_guard
+      # rethrows verbatim) where the spec requires the exception to propagate — a
+      # NodeFilter whose error must surface out of the traversal method that ran
+      # it. The default swallows it: event listeners / observers / timers must not
+      # let a callback error escape their dispatch.
+      def invoke_callback(id, args, this_arg = nil, raising: false)
+        callback_result(@backend.call_js("__rbHost.invokeCallback", id, wrap(Array(args)), wrap(this_arg)), raising)
       end
 
       # Invoke a JS EventListener *object*'s handleEvent (see HostEventListener),
@@ -153,13 +139,7 @@ module Dommy
       # re-raises a thrown value (the traversal must propagate it) rather than
       # swallowing it.
       def invoke_js_ref_accept_node(ref, node, raising: false)
-        raw = @backend.call_js("__rbHost.invokeJsRefAcceptNode", ref, wrap(node))
-        if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
-          raise Dommy::Bridge::ThrowValue.new(unwrap(raw["__rb_cb_threw__"])) if raising
-
-          return nil
-        end
-        unwrap(raw)
+        callback_result(@backend.call_js("__rbHost.invokeJsRefAcceptNode", ref, wrap(node)), raising)
       end
 
       # Turn a JS-side tagged value (produced by __rbHost.tag) back into Ruby:
@@ -279,6 +259,18 @@ module Dommy
 
       def host(handle)
         @handles.fetch(handle)
+      end
+
+      # A callback's return value, or — when the JS side tagged the result as a
+      # throw ("__rb_cb_threw__") — the thrown value re-raised (raising) or
+      # swallowed (the default, returning nil).
+      def callback_result(raw, raising)
+        if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
+          raise Dommy::Bridge::ThrowValue.new(unwrap(raw["__rb_cb_threw__"])) if raising
+
+          return nil
+        end
+        unwrap(raw)
       end
 
       # Run a host-function body, converting a raised Dommy::DOMException into a
@@ -472,7 +464,7 @@ module Dommy
       # Invoke and re-raise a thrown value instead of swallowing it — for a
       # NodeFilter, whose exception must propagate out of the traversal method.
       def __js_call_with_raise__(args)
-        @bridge.invoke_callback_raising(@id, args)
+        @bridge.invoke_callback(@id, args, raising: true)
       end
     end
 
