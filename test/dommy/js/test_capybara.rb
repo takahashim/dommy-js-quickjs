@@ -15,14 +15,23 @@ end
 # Drives the real Capybara::Dommy::Driver with the JS adapter prepended, so
 # execute_script / evaluate_script run against the current Dommy document.
 class Dommy::Js::TestCapybaraAdapter < Minitest::Test
-  APP = lambda do |_env|
-    body = <<~HTML
-      <html><body>
-        <h1 class="title">Hello</h1>
-        <button class="primary">Click me</button>
-      </body></html>
-    HTML
-    [200, {"content-type" => "text/html"}, [body]]
+  APP = lambda do |env|
+    case env["PATH_INFO"]
+    when "/api/message"
+      [200, {"content-type" => "text/plain"}, ["from rack"]]
+    when "/frame"
+      [200, {"content-type" => "text/html"},
+       ["<html><body><h1 class='frame-title'>InFrame</h1></body></html>"]]
+    else
+      body = <<~HTML
+        <html><body>
+          <h1 class="title">Hello</h1>
+          <button class="primary">Click me</button>
+          <iframe src="/frame"></iframe>
+        </body></html>
+      HTML
+      [200, {"content-type" => "text/html"}, [body]]
+    end
   end
 
   def setup
@@ -32,6 +41,10 @@ class Dommy::Js::TestCapybaraAdapter < Minitest::Test
 
   def test_evaluate_primitive
     assert_equal 3, @driver.evaluate_script("1 + 2")
+  end
+
+  def test_page_load_installs_time_pump
+    assert @driver.wait?
   end
 
   def test_evaluate_dom_property
@@ -64,6 +77,52 @@ class Dommy::Js::TestCapybaraAdapter < Minitest::Test
   def test_execute_script_drains_microtasks
     @driver.execute_script('Promise.resolve().then(() => { document.querySelector("h1").textContent = "Async"; });')
     assert_equal "Async", @driver.evaluate_script('document.querySelector("h1").textContent')
+  end
+
+  def test_find_pumps_deterministic_time
+    @driver.execute_script(<<~JS)
+      setTimeout(() => {
+        const p = document.createElement("p");
+        p.className = "late";
+        p.textContent = "Later";
+        document.body.appendChild(p);
+      }, 50);
+    JS
+
+    nodes = @driver.find_css(".late")
+
+    assert_equal 1, nodes.length
+    assert_equal "Later", nodes.first.all_text
+  end
+
+  def test_fetch_uses_rack_session_network_bridge
+    assert_equal "from rack", @driver.evaluate_script('fetch("/api/message").then((r) => r.text())')
+  end
+
+  def test_reset_resubscribes_new_rack_session
+    @driver.reset!
+    @driver.visit("/")
+
+    assert_equal "from rack", @driver.evaluate_script('fetch("/api/message").then((r) => r.text())')
+  end
+
+  # Each window is its own realm: execute/evaluate inside a switched-to frame
+  # run against the FRAME's document and globals, and returning to the top
+  # leaves the top realm's state intact (not destroyed by the frame visit).
+  def test_script_targets_current_frame_realm
+    assert_equal "title", @driver.evaluate_script('document.querySelector("h1").className')
+    @driver.execute_script('globalThis.__realm = "top";')
+
+    @driver.switch_to_frame(@driver.find_css("iframe").first)
+
+    assert_equal "frame-title", @driver.evaluate_script('document.querySelector("h1").className')
+    assert_nil @driver.evaluate_script("globalThis.__realm"), "frame realm must not see the top global"
+    @driver.execute_script('globalThis.__realm = "frame";')
+    assert_equal "frame", @driver.evaluate_script("globalThis.__realm")
+
+    @driver.switch_to_frame(:top)
+    assert_equal "title", @driver.evaluate_script('document.querySelector("h1").className')
+    assert_equal "top", @driver.evaluate_script("globalThis.__realm"), "top realm state must survive the frame visit"
   end
 
   # querySelectorAll returns an array whose every element is wrapped as a node.
