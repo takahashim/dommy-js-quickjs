@@ -16,6 +16,13 @@ module Dommy
   # or uncaught script error fails at the next checkpoint (after boot, after
   # `settle`, at dispose). Wrap intentional errors in `allow_js_errors { … }`.
   class Browser
+    # Capybara-vocabulary finding / scoping / field interaction / click /
+    # matchers come from the shared interaction layer; each interaction's events
+    # are dispatched Ruby-side (synchronously invoking JS handlers), then
+    # `after_interaction` drains the runtime's microtasks so promise reactions
+    # settle before the next line.
+    include Dommy::Interaction::Driver
+
     # Raised in strict mode when JS errors were collected and not acknowledged.
     class JsError < StandardError
       attr_reader :causes
@@ -96,9 +103,11 @@ module Dommy
       nil
     end
 
-    # Run until the event loop is idle (drains microtasks + due timers + rAF).
+    # Settle the work ready at the current virtual time: drain microtasks, run
+    # due-now timers, flush requestAnimationFrame. Does NOT fire a future
+    # `setTimeout(300)` — use `advance_time(300)` for debounce/throttle.
     def settle
-      @runtime.run_until_idle
+      @runtime.settle
       check_js_errors!
       self
     end
@@ -109,6 +118,37 @@ module Dommy
       @runtime.drain_microtasks
       check_js_errors!
       self
+    end
+
+    # An interaction's events have been dispatched (Ruby-side, synchronously
+    # invoking JS handlers); drain the runtime's microtasks so promise reactions
+    # land before the next line, then enforce strict mode.
+    def after_interaction
+      @runtime.drain_microtasks
+      check_js_errors!
+    end
+
+    # Click a submit-capable button. The button's click event fires (JS may
+    # handle / preventDefault it); if it is an un-prevented submit button, the
+    # form's `submit` event is dispatched too (a SPA's JS handles it). Real
+    # navigation on an un-prevented submit is a Session concern (out of scope).
+    def click_button(locator)
+      button = finder.find_button(locator)
+      prevented = Dommy::Interaction::EventSynthesis.click(button)
+      if !prevented && submit_button?(button) && (form = finder.form_for(button))
+        form.dispatch_event(Dommy::Event.new("submit", "bubbles" => true, "cancelable" => true))
+      end
+      after_interaction
+      button
+    end
+
+    # Click a link, firing its click event so SPA JS (Turbo, React Router, …)
+    # can intercept. Real navigation on an un-prevented click is out of scope.
+    def click_link(locator)
+      link = finder.find_link(locator)
+      Dommy::Interaction::EventSynthesis.click(link)
+      after_interaction
+      link
     end
 
     # Suppress strict-mode failure for JS errors raised inside the block (they
@@ -134,6 +174,14 @@ module Dommy
     private
 
     def unacknowledged = @js_errors[@acknowledged..] || []
+
+    def submit_button?(button)
+      if button.tag_name == "BUTTON"
+        button.type == "submit"
+      else
+        %w[submit image].include?(button.type)
+      end
+    end
 
     # In strict mode, fail on any JS error collected since the last
     # acknowledgement. Marks all current errors acknowledged so each is reported

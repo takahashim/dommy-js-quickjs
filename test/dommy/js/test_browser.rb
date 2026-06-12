@@ -93,10 +93,10 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
-  def test_settle_runs_deferred_timer_work
+  def test_settle_runs_due_now_timer_work
     html = <<~HTML
       <html><body><script>
-        setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 50);
+        setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 0);
       </script></body></html>
     HTML
     Dommy::Browser.open(html) do |b|

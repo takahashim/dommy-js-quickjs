@@ -140,6 +140,35 @@ module Dommy
           self
         end
 
+        # Settle the work that is READY at the current virtual time: drain
+        # microtasks, run timers already due now (`setTimeout(0)` chains), and
+        # flush pending `requestAnimationFrame` callbacks by advancing to their
+        # frame boundary — but do NOT jump the clock to a not-yet-due
+        # `setTimeout(300)` (that needs an explicit `advance_time(300)`). This is
+        # the "let promises and animation frames resolve" entry point; `bound`
+        # caps a self-rescheduling rAF loop.
+        def settle(max_iterations: 1000)
+          sched = @window&.scheduler
+          max_iterations.times do
+            drain_microtasks
+            break unless sched
+
+            before = sched.now_ms
+            sched.advance_time(0) # run due-now timers + microtasks, no clock jump
+            drain_microtasks
+
+            raf_at = sched.next_animation_frame_at
+            if raf_at && raf_at > sched.now_ms
+              sched.advance_time(raf_at - sched.now_ms) # advance to the frame, run rAF
+              drain_microtasks
+              next
+            end
+
+            break if sched.now_ms == before
+          end
+          self
+        end
+
         # Surface otherwise-swallowed JS promise rejections (see Backend).
         def on_unhandled_rejection(&block)
           @backend.on_unhandled_rejection(&block)
