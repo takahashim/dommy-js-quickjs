@@ -47,4 +47,32 @@ class Dommy::Js::TestBrowserHarness < Minitest::Test
     assert_equal "function", @h.evaluate("typeof CSS.escape")
     assert_equal "http://localhost/", @h.evaluate("location.href")
   end
+
+  # In a browser the window IS the global object, so a global attached either
+  # way is visible — same identity — from both views. UMD bundles attach to
+  # whichever of globalThis/window/this they detect first (e.g. Stimulus to
+  # globalThis), and app code then reads it off window.
+  def test_window_and_global_this_share_globals
+    # globalThis -> window (the Stimulus UMD case).
+    @h.execute("globalThis.Stimulus = { app: 1 };")
+    assert_equal true, @h.evaluate("window.Stimulus === globalThis.Stimulus")
+    assert_equal true, @h.evaluate('"Stimulus" in window')
+
+    # window -> globalThis (and a bare read).
+    @h.execute("window.Widget = { v: 2 };")
+    assert_equal true, @h.evaluate("globalThis.Widget === window.Widget")
+    assert_equal 2, @h.evaluate("Widget.v")
+
+    # A top-level `var` in a script loaded like a <script> (UMD global build).
+    @h.runtime.load_script("var Library = { ok: true };")
+    assert_equal true, @h.evaluate("window.Library === globalThis.Library")
+
+    # delete through the window drops the global.
+    @h.execute("delete window.Stimulus;")
+    assert_equal "undefined", @h.evaluate("typeof globalThis.Stimulus")
+
+    # Host-resolved window properties are NOT shadowed by the fallback.
+    assert_equal true, @h.evaluate("window.document === document")
+    assert_equal true, @h.evaluate("window.location === location")
+  end
 end
