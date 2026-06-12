@@ -22,6 +22,43 @@ class Dommy::Js::TestCapybaraAdapter < Minitest::Test
     when "/frame"
       [200, {"content-type" => "text/html"},
        ["<html><body><h1 class='frame-title'>InFrame</h1></body></html>"]]
+    when "/host-scripted-frame"
+      [200, {"content-type" => "text/html"},
+       ["<html><body><iframe src='/scripts-frame'></iframe></body></html>"]]
+    when "/scripts-frame"
+      [200, {"content-type" => "text/html"}, [<<~HTML]]
+        <html><body><h1 class="frame-title">InFrame</h1><script>
+          window.__frame = ["inline"];
+          document.addEventListener("DOMContentLoaded", () => window.__frame.push("DCL"));
+        </script></body></html>
+      HTML
+    when "/ext.js"
+      [200, {"content-type" => "application/javascript"}, ['window.__order.push("external");']]
+    when "/missing.js"
+      [404, {"content-type" => "text/plain"}, ["not found"]]
+    when "/scripts"
+      [200, {"content-type" => "text/html"}, [<<~HTML]]
+        <html><body>
+          <h1 id="head">before</h1>
+          <script>
+            window.__order = ["inline"];
+            document.getElementById("head").textContent = "after";
+          </script>
+          <script src="/ext.js"></script>
+          <script>
+            document.addEventListener("DOMContentLoaded", () => window.__order.push("DCL"));
+            window.addEventListener("load", () => window.__order.push("load"));
+          </script>
+          <script type="module">window.__order.push("MODULE_RAN");</script>
+        </body></html>
+      HTML
+    when "/scripts-404"
+      [200, {"content-type" => "text/html"}, [<<~HTML]]
+        <html><body>
+          <script src="/missing.js"></script>
+          <script>window.__ran = "inline-after-404";</script>
+        </body></html>
+      HTML
     else
       body = <<~HTML
         <html><body>
@@ -136,6 +173,35 @@ class Dommy::Js::TestCapybaraAdapter < Minitest::Test
   # A non-element bridge object (the Document) has no Capybara node type -> nil.
   def test_evaluate_non_element_node_is_nil
     assert_nil @driver.evaluate_script("document")
+  end
+
+  # A page's <script> tags run on load: inline and external interleaved in
+  # document order, then DOMContentLoaded, then load. Module scripts are skipped.
+  def test_page_load_runs_scripts_in_document_order
+    @driver.visit("/scripts")
+
+    assert_equal %w[inline external DCL load], @driver.evaluate_script("window.__order")
+    assert_equal "after", @driver.evaluate_script('document.getElementById("head").textContent'),
+                 "inline script's DOM mutation must be visible"
+    refute_includes @driver.evaluate_script("window.__order"), "MODULE_RAN", "type=module must be skipped"
+    assert_equal "complete", @driver.evaluate_script("document.readyState")
+  end
+
+  # A frame's own <script> runs (and its DOMContentLoaded fires) when the frame
+  # realm is built on switch_to_frame — proving per-realm script coverage.
+  def test_frame_scripts_run_on_switch
+    @driver.visit("/host-scripted-frame")
+    @driver.switch_to_frame(@driver.find_css("iframe").first)
+
+    assert_equal %w[inline DCL], @driver.evaluate_script("window.__frame"),
+                 "frame page's inline script and its DOMContentLoaded must run"
+  end
+
+  # A failed external fetch (404) does not abort the sweep: later inline scripts
+  # still run.
+  def test_failed_external_script_does_not_abort_load
+    @driver.visit("/scripts-404")
+    assert_equal "inline-after-404", @driver.evaluate_script("window.__ran")
   end
 
   # install_capybara! is idempotent: requiring/enabling repeatedly prepends once.

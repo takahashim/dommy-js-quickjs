@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "dommy"
 require_relative "quickjs/version"
 
 module Dommy
@@ -18,3 +19,5 @@ require_relative "host_bridge"
 require_relative "quickjs/backend"
 require_relative "quickjs/wasm_bridge"
 require_relative "quickjs/runtime"
+require_relative "quickjs/script_boot"
+require_relative "../browser"

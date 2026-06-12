@@ -71,9 +71,11 @@ module Dommy
           dommy_js_runtime_for(document)
         end
 
-        # Build-or-fetch the realm VM for one document. The network bridge needs
-        # the session; it is absent only on the direct-call-before-navigation
-        # fallback path (then JS fetch falls through to the stub map, as before).
+        # Build-or-fetch the realm VM for one document. The session-backed
+        # resources adapter serves both window.fetch (installed as the fetch
+        # handler) and external <script src> loads; it is absent only on the
+        # direct-call-before-navigation fallback path (then JS fetch falls
+        # through to the stub map and external scripts are skipped, as before).
         def dommy_js_runtime_for(doc)
           (@dommy_js_runtimes ||= {}.compare_by_identity)[doc] ||= begin
             rt = Runtime.new
@@ -81,7 +83,9 @@ module Dommy
             if (window = doc&.default_view)
               rt.install_window(window)
               rt.install_browser_globals
-              ::Dommy::Rack::NetworkBridge.install(@dommy_js_session, window) if @dommy_js_session
+              resources = (::Dommy::Rack::Resources.new(@dommy_js_session) if @dommy_js_session)
+              window.globals["__fetch_handler__"] = ::Dommy::Resources::FetchHandler.new(resources) if resources
+              ScriptBoot.run_document_scripts(rt, doc, resources: resources)
             end
             rt
           end
