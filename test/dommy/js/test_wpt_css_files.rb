@@ -1,0 +1,87 @@
+# frozen_string_literal: true
+
+require "test_helper"
+require_relative "../../support/wpt_runner"
+
+# Runs the vendored real WPT CSS test files through WptRunner — the browser-true
+# path (the file is the document, its <script> tags boot through ScriptBoot,
+# testharness.js + helpers served by WptResources). Each file's failing
+# subtests must be a subset of the documented EXPECTED_FAILURES, so a new
+# regression fails the build while a future fix (a known-failing subtest that
+# starts passing) is tolerated.
+#
+# Expected failures fall into two buckets:
+#   * layout — resolved/used values that need a box tree (Dommy is layout-less)
+#   * unimplemented CSSOM — legacy/edge interface members Dommy doesn't model
+class Dommy::Js::TestWptCssFiles < Minitest::Test
+  # file (relative to the vendored WPT root) => { min_pass:, expected: [names] }
+  EXPECTED = {
+    "css/cssom/CSSStyleSheet.html" => {
+      min_pass: 6,
+      expected: [
+        # legacy CSSOM editing API Dommy doesn't implement
+        "addRule with @media rule", "addRule with #foo selectors",
+        'addRule with no argument adds "undefined" selector',
+        "addRule with index greater than length throws",
+        "removeRule with no argument removes first rule",
+        "removeRule on empty style sheet throws", "removeRule(1)",
+        # insertRule/deleteRule argument validation not enforced
+        "insertRule with no argument throws", "deleteRule with no argument throws",
+        # SameObject identity of cssRules across bridge calls
+        "insertRule with #bar selector", "deleteRule(1)"
+      ]
+    },
+    "css/cssom/MediaList.html" => {
+      min_pass: 0,
+      expected: ["CSSOM - MediaList interface"] # MediaList interface not modelled
+    },
+    "css/cssom/getComputedStyle-detached-subtree.html" => {
+      min_pass: 0,
+      expected: ["getComputedStyle returns no style for detached element"]
+    },
+    "css/cssom/getComputedStyle-pseudo.html" => {
+      min_pass: 3,
+      # width resolution + pseudo-element box probing all need layout / boxes.
+      expected: :layout_pseudo
+    }
+  }.freeze
+
+  def setup
+    skip "WPT not vendored" unless Dommy::Js::WptRunner.available?
+  end
+
+  EXPECTED.each do |file, spec|
+    define_method("test_#{file.gsub(/[^a-z0-9]+/i, '_')}") do
+      results = Dommy::Js::WptRunner.run(file)
+      refute_empty results, "#{file}: harness produced no subtests"
+
+      passed = results.count(&:pass?)
+      assert_operator passed, :>=, spec[:min_pass],
+        "#{file}: #{passed} pass, below baseline #{spec[:min_pass]} (a regression)"
+
+      failing = results.reject(&:pass?).map(&:name)
+      unexpected = failing.reject { |name| expected?(spec[:expected], name) }
+      assert_empty unexpected, "#{file}: unexpected (new) failures:\n  #{unexpected.join("\n  ")}"
+    end
+  end
+
+  private
+
+  def expected?(expected, name)
+    return layout_pseudo?(name) if expected == :layout_pseudo
+
+    expected.include?(name)
+  end
+
+  # The getComputedStyle-pseudo failures are all box/layout dependent: width
+  # resolution (no layout) and probing pseudo-elements that only exist once a
+  # box is generated (which Dommy doesn't do).
+  def layout_pseudo?(name)
+    name.include?("width") ||
+      name.include?("pseudo-element") ||
+      name.include?("display: contents") ||
+      name.include?("CSSStyleDeclaration is immutable") ||
+      name.include?("full range of CSS syntax") ||
+      name.start_with?("Unknown pseudo-element", "::file-selector-button", "Item-based")
+  end
+end
