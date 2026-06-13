@@ -36,10 +36,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "quickjs", "~> 0.18.0"
-  # Hard dependency on the Dommy::Bridge marshalling contract (UNDEFINED /
-  # Bytes / ArrayBuffer / JSValue / UNHANDLED), present since dommy 0.8.1. No
-  # upper bound so the anticipated dommy 0.9.0 resolves without a re-pin.
-  spec.add_dependency "dommy", ">= 0.8.1"
+  spec.add_dependency "dommy", ">= 0.9.0"
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html
