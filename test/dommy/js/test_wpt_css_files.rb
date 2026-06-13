@@ -26,10 +26,7 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
         'addRule with no argument adds "undefined" selector'
       ]
     },
-    "css/cssom/MediaList.html" => {
-      min_pass: 0,
-      expected: ["CSSOM - MediaList interface"] # MediaList interface not modelled
-    },
+    "css/cssom/MediaList.html" => { min_pass: 1, expected: [] },
     "css/cssom/getComputedStyle-detached-subtree.html" => {
       min_pass: 1,
       expected: [] # fully passing
