@@ -39,6 +39,16 @@ module Dommy
         });
       JS
 
+      # testdriver.js stand-in. The real file proxies to a WebDriver automation
+      # backend; we only need the synchronous-ish queries WPT's accessibility
+      # tests use, backed by Dommy's computed role/label on the element proxy.
+      # testdriver-vendor.js / testdriver-actions.js exist only so their
+      # `<script src>` resolves; they need no behavior here.
+      TESTDRIVER_SHIM = <<~JS
+        globalThis.test_driver = globalThis.test_driver || {};
+        test_driver.get_computed_role = (el) => Promise.resolve(el.__internal_computed_role__());
+      JS
+
       module_function
 
       def available? = ::File.exist?(TESTHARNESS) && ::File.directory?(WPT_ROOT)
@@ -50,7 +60,10 @@ module Dommy
         ::Dommy::Resources.chain(
           ::Dommy::Resources.static(
             "/resources/testharness.js" => ::File.read(TESTHARNESS),
-            "/resources/testharnessreport.js" => REPORT_SHIM
+            "/resources/testharnessreport.js" => REPORT_SHIM,
+            "/resources/testdriver.js" => TESTDRIVER_SHIM,
+            "/resources/testdriver-vendor.js" => "",
+            "/resources/testdriver-actions.js" => ""
           ),
           ::Dommy::Resources.file_system(root: WPT_ROOT, base_url: "/")
         )
