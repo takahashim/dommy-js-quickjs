@@ -230,6 +230,8 @@ module Dommy
             globalThis.sessionStorage = window.sessionStorage;
             globalThis.localStorage = window.localStorage;
             globalThis.CSS = window.CSS;
+            globalThis.getComputedStyle = (...args) => window.getComputedStyle(...args);
+            globalThis.matchMedia = (...args) => window.matchMedia(...args);
             globalThis.fetch = (...args) => window.fetch(...args);
             globalThis.addEventListener = (...args) => window.addEventListener(...args);
             globalThis.removeEventListener = (...args) => window.removeEventListener(...args);
