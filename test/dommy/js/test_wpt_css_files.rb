@@ -40,13 +40,7 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
       # Dommy doesn't reject these invalid var() argument syntaxes (`var(--x ())`)
       expected: :var_invalid_syntax
     },
-    "css/css-variables/variable-cycles.html" => {
-      min_pass: 8,
-      # var() referencing a cyclic property uses its fallback here instead of
-      # going invalid (the "secondary cycle" fallback rule)
-      expected: ["Cycle with secondary cycle", "Cycle with overlapping secondary cycle",
-                 "Cycle with deeper secondary cycle"]
-    },
+    "css/css-variables/variable-cycles.html" => { min_pass: 11, expected: [] },
     "css/selectors/child-indexed-pseudo-class.html" => { min_pass: 54, expected: [] },
     "css/css-color/parsing/color-computed.html" => { min_pass: 16, expected: [] },
     "css/css-color/parsing/color-computed-hex-color.html" => { min_pass: 6, expected: [] },
