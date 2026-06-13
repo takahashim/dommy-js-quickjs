@@ -59,6 +59,11 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
 
     # --- nodes (high-pass, HTML-only subset) -----------------------------
     "dom/nodes/Element-classlist.html" => { min_pass: 1420, expected: [] },
+    "dom/nodes/Node-appendChild.html" => {
+      min_pass: 8,
+      # `window.frames` (browsing-context container reflection) isn't modeled.
+      expected: ["Appending a document", "Adopting an orphan", "Adopting a non-orphan"]
+    },
     "dom/nodes/Element-firstElementChild.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-getElementsByClassName.html" => { min_pass: 3, expected: [] },
     "dom/nodes/Element-tagName.html" => { min_pass: 6, expected: [] },
