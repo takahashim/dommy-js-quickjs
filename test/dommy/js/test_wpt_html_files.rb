@@ -26,6 +26,16 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
 
     # --- HTML semantics --------------------------------------------------
     "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
+    "html/semantics/forms/the-input-element/checkbox.html" => { min_pass: 6, expected: [] },
+    "html/semantics/forms/the-input-element/radio.html" => {
+      min_pass: 10,
+      # Radio grouping for detached/orphan trees and cross-form-owner isolation
+      # isn't modeled (group membership is resolved against the live document).
+      expected: [
+        "Radio buttons in an orphan tree should make a group",
+        "Radio buttons in different groups (because they have different form owners or no form owner) do not affect each other's checkedness"
+      ]
+    },
     "html/semantics/forms/the-textarea-element/textarea-type.html" => { min_pass: 1, expected: [] },
     "html/semantics/grouping-content/the-li-element/grouping-li.html" => { min_pass: 10, expected: [] },
     "html/semantics/grouping-content/the-ol-element/grouping-ol.html" => { min_pass: 25, expected: [] },
