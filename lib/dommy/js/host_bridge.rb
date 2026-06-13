@@ -21,6 +21,8 @@ module Dommy
     #   backend.eval(js)                         -> evaluate top-level JS
     #   backend.define_host_function(name) { }   -> expose a Ruby block as a JS global
     #   backend.call_js(path, *args)             -> invoke a JS global function by path
+    #   backend.run_bundle(cache_key, source)    -> run a reused-across-VMs source
+    #                                               bundle (engine may compile-cache)
     #
     # The host object must implement __js_get__/__js_set__/__js_call__, and the
     # bridge needs to know which names are methods (callable via __js_call__)
@@ -29,25 +31,13 @@ module Dommy
       # JS half of the bridge (globalThis.__rbHost). Read from a companion file
       # so it stays lintable/highlightable rather than buried in a heredoc.
       # ::File — inside module Dommy, bare `File` resolves to Dommy::File (the
-      # File API class), not Ruby's file class.
+      # File API class), not Ruby's file class. These bundles are identical
+      # across VMs; the backend's #run_bundle keeps them parsed once per process,
+      # so the bridge itself stays free of any bytecode/engine knowledge.
       HOST_RUNTIME_JS = ::File.read(::File.join(__dir__, "host_runtime.js")).freeze
       # The WICG Observable polyfill (Observable/Subscriber + EventTarget.when),
       # evaluated after the DOM interface prototypes are seeded.
       OBSERVABLE_RUNTIME_JS = ::File.read(::File.join(__dir__, "observable_runtime.js")).freeze
-
-      # Compile the large, identical-per-VM runtime bundles to bytecode once per
-      # process and run that on each fresh VM, instead of re-parsing ~90 KB of JS
-      # on every Runtime build (a big win for VM-per-test workloads). Lazy so the
-      # quickjs gem is loaded by the time the first VM is built.
-      class << self
-        def host_runtime_runnable
-          @host_runtime_runnable ||= ::Dommy::Js::Quickjs::Backend.compile(HOST_RUNTIME_JS, filename: "host_runtime.js")
-        end
-
-        def observable_runtime_runnable
-          @observable_runtime_runnable ||= ::Dommy::Js::Quickjs::Backend.compile(OBSERVABLE_RUNTIME_JS, filename: "observable_runtime.js")
-        end
-      end
 
       def initialize(backend)
         @backend = backend
@@ -306,11 +296,11 @@ module Dommy
       # Run the JS half of the bridge and seed the interface prototypes. Must run
       # after every host function above is registered.
       def seed_runtime!
-        @backend.run_compiled(self.class.host_runtime_runnable)
+        @backend.run_bundle("host_runtime.js", HOST_RUNTIME_JS)
         # Seed base interface prototypes from the single Ruby-side hierarchy.
         @backend.eval("__rbHost.seedInterfaces(#{JSON.generate(DomInterfaces::BASE_CHAINS)});")
         # Observable depends on EventTarget.prototype existing (seeded above).
-        @backend.run_compiled(self.class.observable_runtime_runnable)
+        @backend.run_bundle("observable_runtime.js", OBSERVABLE_RUNTIME_JS)
       end
 
       def host(handle)

@@ -11,6 +11,10 @@ module Dommy
       #
       # Keyed by URL: an asset URL maps 1:1 to its content (Propshaft / Sprockets
       # digest-stamp it; test fixtures are stable within a process).
+      #
+      # The bridge's built-in runtime bundles (host_runtime.js,
+      # observable_runtime.js) use a separate cache in Backend#run_bundle, so an
+      # external-script count here stays uncontaminated by engine internals.
       module ScriptCache
         @cache = {}
         @mutex = Mutex.new

@@ -28,10 +28,30 @@ module Dommy
           ::Quickjs.compile(source, filename: filename)
         end
 
+        # Process-global cache for the engine-internal runtime bundles run via
+        # #run_bundle (host_runtime.js, observable_runtime.js). Kept separate
+        # from ScriptCache (user-facing external scripts) so the two concerns
+        # don't share a count/namespace.
+        @bundle_cache = {}
+        @bundle_mutex = Mutex.new
+
+        def self.compiled_bundle(cache_key, source)
+          @bundle_mutex.synchronize { @bundle_cache[cache_key] ||= compile(source, filename: cache_key.to_s) }
+        end
+
         # Execute precompiled bytecode (a Quickjs::Runnable) on this VM in global
         # scope — equivalent to #eval of its source, without the parse cost.
         def run_compiled(runnable)
           runnable.run(on: @vm)
+        end
+
+        # Run a source bundle that is identical across VMs (the bridge's host
+        # runtime, the Observable polyfill): compile it to bytecode once per
+        # process — keyed by `cache_key` — and run that on this VM. Lets the
+        # engine-agnostic bridge reuse big bundles without knowing about
+        # bytecode; the compile-once optimization stays here in the engine layer.
+        def run_bundle(cache_key, source)
+          run_compiled(self.class.compiled_bundle(cache_key, source))
         end
 
         # Async eval: the gem awaits the top-level result and drains the
