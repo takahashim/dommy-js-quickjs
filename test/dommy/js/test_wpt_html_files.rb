@@ -26,6 +26,9 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
 
     # --- HTML semantics --------------------------------------------------
     "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
+    "html/semantics/forms/the-textarea-element/textarea-type.html" => { min_pass: 1, expected: [] },
+    "html/semantics/grouping-content/the-li-element/grouping-li.html" => { min_pass: 10, expected: [] },
+    "html/semantics/grouping-content/the-ol-element/grouping-ol.html" => { min_pass: 25, expected: [] },
 
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
