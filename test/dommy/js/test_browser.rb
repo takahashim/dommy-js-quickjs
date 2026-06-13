@@ -99,8 +99,8 @@ class Dommy::Js::TestBrowser < Minitest::Test
         setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 0);
       </script></body></html>
     HTML
-    Dommy::Browser.open(html) do |b|
-      assert_nil b.evaluate('document.getElementById("late")')
+    Dommy::Browser.open(html, settle: false) do |b|
+      assert_nil b.evaluate('document.getElementById("late")'), "settle: false leaves the timer pending"
       b.settle
       refute_nil b.evaluate('document.getElementById("late")')
     end

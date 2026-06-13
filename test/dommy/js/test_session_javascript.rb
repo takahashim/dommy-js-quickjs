@@ -21,6 +21,9 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
       [200, {"content-type" => "text/plain", "Set-Cookie" => "u=alice"}, ["set"]]
     when "/whoami"
       [200, {"content-type" => "text/plain"}, [env["HTTP_COOKIE"].to_s]]
+    when "/onload"
+      [200, {"content-type" => "text/html"},
+       ['<html><body><script>setTimeout(() => { window.__t = "fired"; }, 0);</script></body></html>']]
     else
       [200, {"content-type" => "text/html"}, [<<~HTML]]
         <html><head><meta name="csrf-token" content="tok123"></head>
@@ -59,6 +62,18 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     refute @session.has_css?("#box.is-on")
     @session.click("#btn")
     assert @session.has_css?("#box.is-on"), "the page's click handler ran"
+  end
+
+  def test_visit_settles_by_default_and_can_opt_out
+    @session = session
+
+    # settle: false leaves the due-now timer pending.
+    @session.visit("/onload", settle: false)
+    assert_nil @session.evaluate_script("window.__t"), "settle: false observes the page mid-flight"
+
+    # The default settles the page: the setTimeout(0) has fired.
+    @session.visit("/onload")
+    assert_equal "fired", @session.evaluate_script("window.__t")
   end
 
   def test_execute_and_evaluate_script

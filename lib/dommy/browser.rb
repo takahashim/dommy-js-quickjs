@@ -56,7 +56,7 @@ module Dommy
       end
     end
 
-    def initialize(html, url: "http://localhost/", resources: nil, execute_scripts: true, strict: true)
+    def initialize(html, url: "http://localhost/", resources: nil, execute_scripts: true, strict: true, settle: true)
       @resources = resources
       @strict = strict
       @js_errors = []
@@ -80,6 +80,9 @@ module Dommy
         Js::Quickjs::ScriptBoot.run_document_scripts(
           @runtime, @window.document, resources: @resources, on_error: ->(e) { @js_errors << e }
         )
+        # Leave the page in a ready state: run on-load promises, due-now timers,
+        # and rAF (not future timers). `settle: false` observes it mid-flight.
+        @runtime.settle if settle
       end
       check_js_errors!
     end
