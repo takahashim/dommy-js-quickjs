@@ -34,6 +34,8 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
       min_pass: 1,
       expected: [] # fully passing
     },
+    "css/css-syntax/declarations-trim-whitespace.html" => { min_pass: 9, expected: [] },
+    "css/selectors/child-indexed-pseudo-class.html" => { min_pass: 54, expected: [] },
     "css/css-color/parsing/color-computed.html" => { min_pass: 16, expected: [] },
     "css/css-color/parsing/color-computed-hex-color.html" => { min_pass: 6, expected: [] },
     "css/css-color/parsing/color-computed-hsl.html" => {
