@@ -8,13 +8,19 @@ require_relative "../../support/wpt_conformance"
 # including the fragment parsing algorithm's "already started" flag, so a
 # <script> inserted via innerHTML/insertAdjacentHTML never executes.
 #
-# XMLSerializer-serializeToString is intentionally omitted: its remaining cases
-# are all XML-namespace serialization (prefix generation/rewriting), which is
-# out of scope for an HTML-only engine.
 class Dommy::Js::TestWptDomParsingFiles < Minitest::Test
   include Dommy::Js::WptConformance
 
   wpt_files(
+    "domparsing/XMLSerializer-serializeToString.html" => {
+      min_pass: 27,
+      # XLink-prefix preservation and the explicit default-namespace
+      # undeclaration (xmlns="") are remaining namespace-algorithm edges.
+      expected: [
+        "Check if no special handling for XLink namespace unlike HTML serializer.",
+        "Check if a prefix bound to an empty namespace URI (\"no namespace\") serialize"
+      ]
+    },
     "domparsing/DOMParser-parseFromString-html.html" => {
       min_pass: 9,
       # Synchronous <script> discovery while a CSS @import is pending — depends
