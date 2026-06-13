@@ -20,6 +20,20 @@ module Dommy
           @vm.eval_code(js, async: false)
         end
 
+        # Compile JS source to reusable bytecode (parsed once, via a throwaway
+        # VM). Run it on any number of fresh VMs with #run_compiled — far cheaper
+        # than re-parsing the source per VM (the large host runtime / vendored
+        # bundles are identical across VMs).
+        def self.compile(source, filename: "<compiled>")
+          ::Quickjs.compile(source, filename: filename)
+        end
+
+        # Execute precompiled bytecode (a Quickjs::Runnable) on this VM in global
+        # scope — equivalent to #eval of its source, without the parse cost.
+        def run_compiled(runnable)
+          runnable.run(on: @vm)
+        end
+
         # Async eval: the gem awaits the top-level result and drains the
         # microtask queue, so JS `await`/Promises resolve before returning.
         def eval_awaited(js)

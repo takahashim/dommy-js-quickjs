@@ -95,7 +95,9 @@ module Dommy
           response = resources.get(url)
           return unless response&.success?
 
-          with_current_script(document, element) { runtime.load_script(response.body) }
+          # Cache the compiled bytecode by URL: vendored bundles re-parse on
+          # every fresh VM otherwise.
+          with_current_script(document, element) { runtime.load_script_cached(response.body, cache_key: url) }
         end
 
         # Resolve a script's `src` against the document's base URL, which is the

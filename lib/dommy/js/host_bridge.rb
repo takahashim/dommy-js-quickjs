@@ -35,6 +35,20 @@ module Dommy
       # evaluated after the DOM interface prototypes are seeded.
       OBSERVABLE_RUNTIME_JS = ::File.read(::File.join(__dir__, "observable_runtime.js")).freeze
 
+      # Compile the large, identical-per-VM runtime bundles to bytecode once per
+      # process and run that on each fresh VM, instead of re-parsing ~90 KB of JS
+      # on every Runtime build (a big win for VM-per-test workloads). Lazy so the
+      # quickjs gem is loaded by the time the first VM is built.
+      class << self
+        def host_runtime_runnable
+          @host_runtime_runnable ||= ::Dommy::Js::Quickjs::Backend.compile(HOST_RUNTIME_JS, filename: "host_runtime.js")
+        end
+
+        def observable_runtime_runnable
+          @observable_runtime_runnable ||= ::Dommy::Js::Quickjs::Backend.compile(OBSERVABLE_RUNTIME_JS, filename: "observable_runtime.js")
+        end
+      end
+
       def initialize(backend)
         @backend = backend
         @handles = HandleTable.new
@@ -250,11 +264,11 @@ module Dommy
           @custom_elements.upgrade(host(handle))
           nil
         end
-        @backend.eval(HOST_RUNTIME_JS)
+        @backend.run_compiled(self.class.host_runtime_runnable)
         # Seed base interface prototypes from the single Ruby-side hierarchy.
         @backend.eval("__rbHost.seedInterfaces(#{JSON.generate(DomInterfaces::BASE_CHAINS)});")
         # Observable depends on EventTarget.prototype existing (seeded above).
-        @backend.eval(OBSERVABLE_RUNTIME_JS)
+        @backend.run_compiled(self.class.observable_runtime_runnable)
       end
 
       def host(handle)

@@ -78,6 +78,15 @@ module Dommy
           nil
         end
 
+        # Like #load_script, but compiles the source to bytecode once per
+        # `cache_key` (an external script's URL) and reuses it across VMs —
+        # avoiding a re-parse of large vendored bundles on every page load.
+        def load_script_cached(js, cache_key:)
+          @backend.run_compiled(ScriptCache.compiled(cache_key, js))
+          drain_microtasks
+          nil
+        end
+
         # Install the ESM module resolver (see Backend#module_loader=). A
         # callable `(specifier, importer) -> source | {code:, as:} | nil`.
         def module_loader=(callable)
