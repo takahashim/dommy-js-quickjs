@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 require "capybara/dommy"
-require_relative "session_runtime"
+require "dommy/rack"
+require_relative "../quickjs"
 
 module Dommy
   module Js
@@ -46,7 +47,7 @@ module Dommy
           return if defined?(@dommy_js_session) && @dommy_js_session.equal?(session)
 
           @dommy_js_session = session
-          @dommy_js_host = SessionRuntime.new(session) { document }
+          @dommy_js_host = ::Dommy::Rack::SessionRuntime.new(session) { document }
           self.time_pump = -> { @dommy_js_host.pump }
         end
 
