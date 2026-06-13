@@ -2,7 +2,7 @@
 
 require "dommy/rack/resources"
 require_relative "../quickjs"
-require_relative "script_boot"
+require_relative "../script_boot"
 
 module Dommy
   module Js
@@ -102,7 +102,7 @@ module Dommy
         end
 
         def build_runtime(doc)
-          rt = Runtime.new
+          rt = Dommy::Js.build_runtime
           rt.on_unhandled_rejection { |err| @js_errors << err }
           rt.on_log { |log| @console << log }
           rt.define_host_object("document", doc)
@@ -111,7 +111,7 @@ module Dommy
             rt.install_browser_globals
             resources = ::Dommy::Rack::Resources.new(@session)
             window.globals["__fetch_handler__"] = ::Dommy::Resources::FetchHandler.new(resources)
-            ScriptBoot.run_document_scripts(rt, doc, resources: resources)
+            Js::ScriptBoot.run_document_scripts(rt, doc, resources: resources)
           end
           rt
         end

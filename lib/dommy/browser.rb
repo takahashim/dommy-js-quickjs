@@ -57,7 +57,7 @@ module Dommy
     end
 
     def initialize(html, url: "http://localhost/", resources: nil, execute_scripts: true, strict: true, settle: true,
-      wasm_memory_shim: false)
+      wasm_memory_shim: false, backend: nil)
       @resources = resources
       @strict = strict
       @js_errors = []
@@ -69,7 +69,9 @@ module Dommy
       @window = Dommy.parse(html)
       @window.location.__internal_set_url__(url) if url
 
-      @runtime = Js::Quickjs::Runtime.new
+      # The JS engine is pluggable: `backend:` selects a registered runtime
+      # (nil → the configured default, QuickJS when dommy-js-quickjs is loaded).
+      @runtime = Js.build_runtime(backend)
       @runtime.on_unhandled_rejection { |err| @js_errors << err }
       @runtime.on_log { |log| @console << log }
       @runtime.define_host_object("document", @window.document)
@@ -77,11 +79,11 @@ module Dommy
       @runtime.install_browser_globals
       # Opt-in WPT scaffolding (common/sab.js derives SharedArrayBuffer through
       # WebAssembly.Memory); off by default so real pages don't see the shim.
-      @runtime.install_wasm_memory_shim if wasm_memory_shim
+      @runtime.install_wasm_memory_shim if wasm_memory_shim && @runtime.respond_to?(:install_wasm_memory_shim)
       @window.globals["__fetch_handler__"] = Resources::FetchHandler.new(@resources) if @resources
 
       if execute_scripts
-        Js::Quickjs::ScriptBoot.run_document_scripts(
+        Js::ScriptBoot.run_document_scripts(
           @runtime, @window.document, resources: @resources, on_error: ->(e) { @js_errors << e }
         )
         # Leave the page in a ready state: run on-load promises, due-now timers,

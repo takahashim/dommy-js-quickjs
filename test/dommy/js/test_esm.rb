@@ -125,7 +125,7 @@ class Dommy::Js::TestEsm < Minitest::Test
   # --- ImportMap unit ---
 
   def test_import_map_exact_and_trailing_slash
-    map = Dommy::Js::Quickjs::ImportMap.parse(<<~JSON)
+    map = Dommy::Js::ImportMap.parse(<<~JSON)
       { "imports": { "app": "/app.js", "lib/": "/vendor/lib/" } }
     JSON
     assert_equal "/app.js", map.resolve("app")
@@ -134,7 +134,7 @@ class Dommy::Js::TestEsm < Minitest::Test
   end
 
   def test_import_map_scope_overrides_top_level
-    map = Dommy::Js::Quickjs::ImportMap.parse(<<~JSON)
+    map = Dommy::Js::ImportMap.parse(<<~JSON)
       { "imports": { "lodash": "/global/lodash.js" },
         "scopes": { "https://app.test/admin/": { "lodash": "/admin/lodash.js" } } }
     JSON
@@ -143,7 +143,7 @@ class Dommy::Js::TestEsm < Minitest::Test
   end
 
   def test_empty_import_map
-    assert Dommy::Js::Quickjs::ImportMap.parse("").empty?
-    assert Dommy::Js::Quickjs::ImportMap.parse("not json").empty?
+    assert Dommy::Js::ImportMap.parse("").empty?
+    assert Dommy::Js::ImportMap.parse("not json").empty?
   end
 end
