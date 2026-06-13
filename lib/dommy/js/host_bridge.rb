@@ -359,20 +359,20 @@ module Dommy
       def wrap(value)
         # A `__js_call__` may return the UNDEFINED sentinel for a void op; marshal
         # it so the JS side yields `undefined` rather than `null`.
-        if defined?(Dommy::Bridge::UNDEFINED) && value.equal?(Dommy::Bridge::UNDEFINED)
+        if value.equal?(Dommy::Bridge::UNDEFINED)
           return {WireTags::UNDEFINED => true}
         end
         # A byte buffer tagged ArrayBuffer crosses back as a bare ArrayBuffer
         # (checked before Bytes, since ArrayBuffer < Bytes).
-        if defined?(Dommy::Bridge::ArrayBuffer) && value.is_a?(Dommy::Bridge::ArrayBuffer)
+        if value.is_a?(Dommy::Bridge::ArrayBuffer)
           return {WireTags::ARRAY_BUFFER => value.to_a}
         end
         # A byte buffer crosses back as a JS Uint8Array.
-        if defined?(Dommy::Bridge::Bytes) && value.is_a?(Dommy::Bridge::Bytes)
+        if value.is_a?(Dommy::Bridge::Bytes)
           return {WireTags::BYTES => value.to_a}
         end
         # An opaque JS value returns as its original JS object (identity kept).
-        if defined?(Dommy::Bridge::JSValue) && value.is_a?(Dommy::Bridge::JSValue)
+        if value.is_a?(Dommy::Bridge::JSValue)
           return {WireTags::JS_REF => value.ref}
         end
         # A JS EventListener object wrapped on the way in returns as that same JS
@@ -444,20 +444,18 @@ module Dommy
               # invokes acceptNode on the live JS object (fresh getter, this =
               # object, exceptions propagated).
               (@filter_objects ||= {})[ref] ||= HostNodeFilter.new(self, ref)
-            elsif defined?(Dommy::Bridge::JSValue)
+            else
               # An opaque JS value (a non-plain object Ruby just stores and
               # returns, e.g. an abort reason) — kept as a handle so it
               # round-trips with identity rather than being flattened to a Hash.
               Dommy::Bridge::JSValue.new(ref, value[WireTags::JS_LABEL])
-            else
-              value
             end
           elsif value.key?(WireTags::UNDEFINED)
             # A top-level JS `undefined` argument — distinct from JS null (nil).
-            defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
+            Dommy::Bridge::UNDEFINED
           elsif value.key?(WireTags::BYTES)
             # A JS ArrayBuffer / TypedArray argument arrives as a byte buffer.
-            defined?(Dommy::Bridge::Bytes) ? Dommy::Bridge::Bytes.new(value[WireTags::BYTES]) : value[WireTags::BYTES]
+            Dommy::Bridge::Bytes.new(value[WireTags::BYTES])
           else
             value.transform_values { |element| unwrap(element) }
           end
@@ -467,7 +465,7 @@ module Dommy
           # the gem's `:undefined` symbol. Normalize it to the same sentinel a
           # tagged top-level undefined produces, so setters can distinguish it
           # from `null` (e.g. `el.ariaLabel = undefined` removes the attribute).
-          defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
+          Dommy::Bridge::UNDEFINED
         else
           value
         end
@@ -486,10 +484,9 @@ module Dommy
       end
 
       # Did Dommy treat a __js_set__ as a real DOM property? A returned UNHANDLED
-      # sentinel means "no" (the JS side then keeps it as an expando). Tolerant of
-      # older Dommy without the sentinel (treats everything as handled).
+      # sentinel means "no" (the JS side then keeps it as an expando).
       def dommy_handled?(result)
-        !(defined?(Dommy::Bridge::UNHANDLED) && result == Dommy::Bridge::UNHANDLED)
+        result != Dommy::Bridge::UNHANDLED
       end
     end
 
