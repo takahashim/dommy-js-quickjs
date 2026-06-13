@@ -2,7 +2,6 @@
 
 require "dommy/rack/resources"
 require_relative "../quickjs"
-require_relative "../script_boot"
 
 module Dommy
   module Js
