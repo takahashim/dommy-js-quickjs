@@ -61,17 +61,29 @@ module Dommy
 
         # An ES module script. `currentScript` is null for modules (spec), so it
         # is not set. An inline body is seeded under the document URL (so its
-        # `import.meta.url` is the page and its relative imports resolve against
-        # it); an external module loads by its own URL.
+        # relative imports resolve against the page) and pinned to the page's
+        # `import.meta.url`: the engine derives import.meta.url from the module's
+        # unique cache key, which carries a `#dommy-inline-N` fragment for a
+        # second inline module, so we set `import.meta.url` (writable) to the
+        # clean page URL up front. An external module loads by its own URL.
         def run_module(runtime, document, mod, loader)
           kind, value = mod
           if kind == :inline
-            base = document.base_uri
-            base = document.url if base.to_s.empty?
-            runtime.load_module_url(loader.seed_inline(base, value))
+            base = inline_base(document)
+            # No newline, so the original body's line numbers are preserved.
+            body = "import.meta.url = #{base.to_json}; #{value}"
+            runtime.load_module_url(loader.seed_inline(base, body))
           elsif (url = resolve_url(document, value))
             runtime.load_module_url(url)
           end
+        end
+
+        # The page URL an inline module is identified by (its import.meta.url and
+        # the base for its relative imports).
+        def inline_base(document)
+          base = document.base_uri
+          base = document.url if base.to_s.empty?
+          base.to_s.empty? ? "about:blank" : base.to_s
         end
 
         def run_external(runtime, document, element, src, resources)

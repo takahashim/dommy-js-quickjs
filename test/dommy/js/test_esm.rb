@@ -68,6 +68,20 @@ class Dommy::Js::TestEsm < Minitest::Test
     end
   end
 
+  def test_multiple_inline_modules_share_the_clean_import_meta_url
+    html = <<~HTML
+      <html><body>
+        <script type="module">window.__m1 = import.meta.url;</script>
+        <script type="module">window.__m2 = import.meta.url;</script>
+      </body></html>
+    HTML
+    Dommy::Browser.open(html, url: "https://app.test/page", resources: ESM.call) do |b|
+      assert_equal "https://app.test/page", b.evaluate("window.__m1")
+      assert_equal "https://app.test/page", b.evaluate("window.__m2"),
+                   "a second inline module also reports the clean page URL (not a #fragment)"
+    end
+  end
+
   def test_css_import_is_an_empty_module
     open('<script type="module" src="https://app.test/application.js"></script>') do |b|
       assert_equal "function", b.evaluate("typeof window.Stimulus"), "module ran past the CSS import without crashing"
