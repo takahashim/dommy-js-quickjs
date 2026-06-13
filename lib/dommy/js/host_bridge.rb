@@ -24,6 +24,16 @@ module Dommy
     #   backend.run_bundle(cache_key, source)    -> run a reused-across-VMs source
     #                                               bundle (engine may compile-cache)
     #
+    # Value representation a backend must deliver across the boundary (host
+    # function arguments and call_js results): JSON-ish Ruby values
+    # (Hash/Array/String/Numeric/true/false/nil) carrying the WireTags protocol.
+    # One non-JSON value is part of the contract: a *bare* JS `undefined` — one
+    # not wrapped in a WireTags-tagged value (e.g. a property-set value, which a
+    # backend marshals directly rather than through the tagged-args path) —
+    # arrives as the Ruby symbol `:undefined`. The bridge normalizes that to
+    # Dommy::Bridge::UNDEFINED, keeping it distinct from JS null (nil). Any
+    # backend must honor this, so the bridge needs no engine-specific knowledge.
+    #
     # The host object must implement __js_get__/__js_set__/__js_call__, and the
     # bridge needs to know which names are methods (callable via __js_call__)
     # vs. properties (read via __js_get__) — see #method_names.
@@ -450,11 +460,12 @@ module Dommy
             value.transform_values { |element| unwrap(element) }
           end
         when :undefined
-          # A raw JS `undefined` (e.g. a property-set value, which crosses via
-          # `dehydrate` rather than the tagged `dehydrateArgs`) reaches Ruby as
-          # the gem's `:undefined` symbol. Normalize it to the same sentinel a
-          # tagged top-level undefined produces, so setters can distinguish it
-          # from `null` (e.g. `el.ariaLabel = undefined` removes the attribute).
+          # A bare JS `undefined` (e.g. a property-set value, marshalled
+          # directly rather than through the tagged-args path) arrives as the
+          # `:undefined` symbol — see the backend contract above. Normalize it to
+          # the same sentinel a tagged top-level undefined produces, so setters
+          # can distinguish it from `null` (e.g. `el.ariaLabel = undefined`
+          # removes the attribute).
           Dommy::Bridge::UNDEFINED
         else
           value
