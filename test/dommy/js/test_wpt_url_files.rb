@@ -4,16 +4,15 @@ require "test_helper"
 require_relative "../../support/wpt_conformance"
 
 # Real WPT URL / URLSearchParams `.any.js` files, run through WptRunner. Dommy's
-# URL implementation passes these almost entirely.
-#
-# url-constructor.any.js / url-origin.any.js are intentionally not registered:
-# they are data-driven (a single promise_test that fetch()es the multi-hundred-
-# case urltestdata.json), and the harness doesn't yet resolve that fetch — a
-# separate harness concern, not a URL-parsing gap.
+# URL implementation passes these almost entirely — including the data-driven
+# url-constructor / url-origin suites (a promise_test that fetch()es the
+# multi-hundred-case urltestdata.json corpus from the vendored resources).
 class Dommy::Js::TestWptUrlFiles < Minitest::Test
   include Dommy::Js::WptConformance
 
   wpt_files(
+    "url/url-constructor.any.js" => { min_pass: 888, expected: [] },
+    "url/url-origin.any.js" => { min_pass: 401, expected: [] },
     "url/url-statics-canparse.any.js" => { min_pass: 8, expected: [] },
     "url/url-statics-parse.any.js" => { min_pass: 8, expected: [] },
     "url/url-tojson.any.js" => { min_pass: 1, expected: [] },
