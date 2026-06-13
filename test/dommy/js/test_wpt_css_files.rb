@@ -17,17 +17,14 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
   # file (relative to the vendored WPT root) => { min_pass:, expected: [names] }
   EXPECTED = {
     "css/cssom/CSSStyleSheet.html" => {
-      min_pass: 6,
+      min_pass: 12,
       expected: [
-        # legacy CSSOM editing API Dommy doesn't implement
-        "addRule with @media rule", "addRule with #foo selectors",
+        # CSSOM rule subclasses aren't exposed as JS constructors
+        "addRule with @media rule",
+        # addRule rule text isn't re-serialized (Dommy keeps verbatim cssText)
+        "addRule with #foo selectors",
         'addRule with no argument adds "undefined" selector',
-        "addRule with index greater than length throws",
-        "removeRule with no argument removes first rule",
-        "removeRule on empty style sheet throws", "removeRule(1)",
-        # insertRule/deleteRule argument validation not enforced
-        "insertRule with no argument throws", "deleteRule with no argument throws",
-        # SameObject identity of cssRules across bridge calls
+        # SameObject identity of cssRules across bridge calls (host-object wrapper)
         "insertRule with #bar selector", "deleteRule(1)"
       ]
     },
@@ -36,11 +33,11 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
       expected: ["CSSOM - MediaList interface"] # MediaList interface not modelled
     },
     "css/cssom/getComputedStyle-detached-subtree.html" => {
-      min_pass: 0,
-      expected: ["getComputedStyle returns no style for detached element"]
+      min_pass: 1,
+      expected: [] # fully passing
     },
     "css/cssom/getComputedStyle-pseudo.html" => {
-      min_pass: 3,
+      min_pass: 4,
       # width resolution + pseudo-element box probing all need layout / boxes.
       expected: :layout_pseudo
     }
