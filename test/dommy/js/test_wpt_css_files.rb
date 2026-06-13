@@ -34,6 +34,14 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
       min_pass: 1,
       expected: [] # fully passing
     },
+    "css/css-color/parsing/color-computed.html" => { min_pass: 16, expected: [] },
+    "css/css-color/parsing/color-computed-hex-color.html" => { min_pass: 6, expected: [] },
+    "css/css-color/parsing/color-computed-hsl.html" => {
+      min_pass: 3735,
+      # the stragglers are calc()/sign()/container-query units *inside* the
+      # color function — math resolution Dommy doesn't do in color channels.
+      expected: :calc_in_color
+    },
     "css/cssom/getComputedStyle-pseudo.html" => {
       min_pass: 4,
       # width resolution + pseudo-element box probing all need layout / boxes.
@@ -64,6 +72,7 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
 
   def expected?(expected, name)
     return layout_pseudo?(name) if expected == :layout_pseudo
+    return name.include?("calc(") if expected == :calc_in_color
 
     expected.include?(name)
   end
