@@ -16,6 +16,8 @@ class Dommy::Js::TestWptEncodingFiles < Minitest::Test
     "encoding/textdecoder-ignorebom.any.js" => { min_pass: 4, expected: [] },
     "encoding/textdecoder-copy.any.js" => { min_pass: 2, expected: [] },
     "encoding/textencoder-utf16-surrogates.any.js" => { min_pass: 7, expected: [] },
+    "encoding/textdecoder-utf16-surrogates.any.js" => { min_pass: 10, expected: [] },
+    "encoding/textdecoder-byte-order-marks.any.js" => { min_pass: 3, expected: [] },
     # textdecoder-eof is intentionally omitted: both of its test() blocks mix in
     # Big5 cases, and the Big5 codec is out of scope (no legacy multi-byte
     # tables). UTF-8 end-of-queue / streaming flush behavior itself is correct

@@ -47,13 +47,25 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # --- events ----------------------------------------------------------
     "dom/events/AddEventListenerOptions-once.any.js" => { min_pass: 4, expected: [] },
     "dom/events/CustomEvent.html" => { min_pass: 3, expected: [] },
+    "dom/events/Event-cancelBubble.html" => { min_pass: 8, expected: [] },
+    "dom/events/Event-constants.html" => { min_pass: 4, expected: [] },
     "dom/events/Event-constructors.any.js" => { min_pass: 14, expected: [] },
+    "dom/events/Event-defaultPrevented.html" => { min_pass: 8, expected: [] },
+    "dom/events/Event-defaultPrevented-after-dispatch.html" => { min_pass: 2, expected: [] },
     "dom/events/Event-dispatch-bubbles-false.html" => { min_pass: 5, expected: [] },
     "dom/events/Event-dispatch-bubbles-true.html" => { min_pass: 5, expected: [] },
+    "dom/events/Event-dispatch-detached-click.html" => { min_pass: 2, expected: [] },
+    "dom/events/Event-dispatch-multiple-cancelBubble.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-multiple-stopPropagation.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-order.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-propagation-stopped.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-target-moved.html" => { min_pass: 1, expected: [] },
     "dom/events/Event-initEvent.html" => { min_pass: 12, expected: [] },
     "dom/events/Event-isTrusted.any.js" => { min_pass: 1, expected: [] },
     "dom/events/Event-propagation.html" => { min_pass: 7, expected: [] },
     "dom/events/Event-stopImmediatePropagation.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-type.html" => { min_pass: 3, expected: [] },
+    "dom/events/Event-type-empty.html" => { min_pass: 2, expected: [] },
     "dom/events/EventListenerOptions-capture.html" => { min_pass: 4, expected: [] },
     "dom/events/EventTarget-add-remove-listener.any.js" => { min_pass: 1, expected: [] },
 
@@ -64,9 +76,30 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       # `window.frames` (browsing-context container reflection) isn't modeled.
       expected: ["Appending a document", "Adopting an orphan", "Adopting a non-orphan"]
     },
+    "dom/nodes/Comment-constructor.html" => {
+      min_pass: 12,
+      expected: [
+        # NUL bytes in comment data (Makiri/lexbor rejects them), ToString of a
+        # plain object argument, and cross-global ownerDocument (no second realm).
+        "new Comment(): \"\\0\"", "new Comment(): \"\\0test\"",
+        "new Comment(): two arguments",
+        "new Comment() should get the correct ownerDocument across globals"
+      ]
+    },
+    "dom/nodes/DocumentFragment-constructor.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Document-getElementsByClassName.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Element-childElementCount.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-firstElementChild.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-getElementsByClassName.html" => { min_pass: 3, expected: [] },
+    "dom/nodes/Element-hasAttribute.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Element-hasAttributes.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Element-lastElementChild.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Element-nextElementSibling.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Element-previousElementSibling.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Element-siblingElement-null.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-tagName.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/getElementsByClassName-01.htm" => { min_pass: 1, expected: [] },
+    "dom/nodes/getElementsByClassName-02.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Node-cloneNode.html" => {
       min_pass: 119,
@@ -91,6 +124,14 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       expected: ["documents should be compared on reference"]
     },
     "dom/nodes/Node-nodeName.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/Text-constructor.html" => {
+      min_pass: 12,
+      expected: [
+        "new Text(): \"\\0\"", "new Text(): \"\\0test\"",
+        "new Text(): two arguments",
+        "new Text() should get the correct ownerDocument across globals"
+      ]
+    },
     "dom/nodes/ParentNode-children.html" => { min_pass: 1, expected: [] },
     "dom/nodes/ParentNode-querySelector-case-insensitive.html" => { min_pass: 2, expected: [] },
     "dom/nodes/ParentNode-querySelector-scope.html" => { min_pass: 4, expected: [] },

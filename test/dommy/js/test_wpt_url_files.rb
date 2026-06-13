@@ -14,6 +14,7 @@ class Dommy::Js::TestWptUrlFiles < Minitest::Test
     "url/url-constructor.any.js" => { min_pass: 888, expected: [] },
     "url/url-origin.any.js" => { min_pass: 401, expected: [] },
     "url/url-statics-canparse.any.js" => { min_pass: 8, expected: [] },
+    "url/historical.any.js" => { min_pass: 1, expected: [] },
     "url/url-statics-parse.any.js" => { min_pass: 8, expected: [] },
     "url/url-tojson.any.js" => { min_pass: 1, expected: [] },
     "url/urlsearchparams-append.any.js" => { min_pass: 4, expected: [] },
