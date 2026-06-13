@@ -113,6 +113,13 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/Element-previousElementSibling.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-siblingElement-null.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-tagName.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/attributes-namednodemap.html" => {
+      min_pass: 7,
+      # NamedNodeMap named-property set vs. method-name shadowing edge.
+      expected: ["setNamedItem and removeNamedItem on `attributes` should not interfere with existing method names"]
+    },
+    "dom/nodes/getElementsByClassName-empty-set.html" => { min_pass: 3, expected: [] },
+    "dom/nodes/Node-compareDocumentPosition.html" => { min_pass: 1444, expected: [] },
     "dom/nodes/getElementsByClassName-01.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/getElementsByClassName-02.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },

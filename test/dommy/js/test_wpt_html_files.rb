@@ -24,6 +24,9 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "#{HISTORY}/history_replacestate_nooptionalparam.html" => { min_pass: 1, expected: [] },
     "#{HISTORY}/history_state.html" => { min_pass: 1, expected: [] },
 
+    # --- HTML semantics --------------------------------------------------
+    "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
+
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/aria-attribute-reflection.html" => { min_pass: 41, expected: [] },
