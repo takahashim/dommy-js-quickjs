@@ -81,19 +81,8 @@ module Dommy
         # document.defaultView.DOMException, …).
         @backend.call_js("__rbHost.attachStatics")
         @backend.call_js("__rbHost.exposeConstructorsOnWindow")
-        # Route Dommy's host-side microtasks (MutationObserver delivery, …) onto
-        # the engine's native promise-job queue, so they interleave FIFO with JS
-        # `await`/Promise reactions instead of draining on a separate pass (which
-        # would deliver e.g. MutationObserver records only after `await
-        # Promise.resolve()`, batching several mutations into one callback).
-        if win.respond_to?(:scheduler) && win.scheduler.respond_to?(:native_microtask_scheduler=)
-          win.scheduler.native_microtask_scheduler = ->(callback) { schedule_native_microtask(callback) }
-        end
-        # Let a classic <script> inserted into the document execute (Dommy has no
-        # JS engine; it calls back here to run the body in global scope).
-        if win.respond_to?(:document) && win.document.respond_to?(:script_runner=)
-          win.document.script_runner = ->(source) { @backend.call_js("__rbHost.runScript", source.to_s) }
-        end
+        wire_scheduler!(win)
+        wire_script_runner!(win)
       end
 
       # Enqueue a Ruby callback as a NATIVE microtask (a resolved-promise job), so
@@ -170,7 +159,41 @@ module Dommy
 
       private
 
+      # Route Dommy's host-side microtasks (MutationObserver delivery, …) onto
+      # the engine's native promise-job queue, so they interleave FIFO with JS
+      # `await`/Promise reactions instead of draining on a separate pass (which
+      # would deliver e.g. MutationObserver records only after `await
+      # Promise.resolve()`, batching several mutations into one callback).
+      def wire_scheduler!(win)
+        return unless win.respond_to?(:scheduler) && win.scheduler.respond_to?(:native_microtask_scheduler=)
+
+        win.scheduler.native_microtask_scheduler = ->(callback) { schedule_native_microtask(callback) }
+      end
+
+      # Let a classic <script> inserted into the document execute (Dommy has no
+      # JS engine; it calls back here to run the body in global scope).
+      def wire_script_runner!(win)
+        return unless win.respond_to?(:document) && win.document.respond_to?(:script_runner=)
+
+        win.document.script_runner = ->(source) { @backend.call_js("__rbHost.runScript", source.to_s) }
+      end
+
+      # Register the host-function ABI in cohesive groups, then run the JS-side
+      # runtime that consumes it. Registration order among the groups is
+      # irrelevant (they only define functions); seed_runtime! must run last,
+      # since the runtime it loads calls back into these functions.
       def install!
+        install_object_abi!
+        install_lifecycle_abi!
+        install_construction_abi!
+        install_custom_elements_abi!
+        seed_runtime!
+      end
+
+      # A host object's property/method ABI, plus the legacy-platform-object
+      # named-property protocol (named getter/deleter) and the self-describe call
+      # makeProxy uses to build the right JS prototype.
+      def install_object_abi!
         @backend.define_host_function("__rb_host_get") do |handle, prop|
           dom_guard do
             obj = host(handle)
@@ -205,17 +228,6 @@ module Dommy
           info["ce"] = obj.__js_custom_element_name__ if obj.respond_to?(:__js_custom_element_name__)
           info
         end
-        @backend.define_host_function("__rb_release_handle") do |handle|
-          @handles.release(handle)
-          nil
-        end
-        # Run a Ruby microtask previously registered by schedule_native_microtask,
-        # invoked from the resolved-promise job scheduleMicrotask queued.
-        @backend.define_host_function("__rb_run_microtask") do |id|
-          callback = @microtask_procs.delete(id)
-          callback&.call
-          nil
-        end
         # WebIDL "supported property names" for a legacy platform object (a live
         # array-like/maplike collection): the current ordered named-property
         # keys. Queried per ownKeys / getOwnPropertyDescriptor so it tracks DOM
@@ -233,6 +245,27 @@ module Dommy
             obj.respond_to?(:__js_delete__) ? dommy_handled?(obj.__js_delete__(prop)) : false
           end
         end
+      end
+
+      # VM bookkeeping: proxy-handle release (driven by JS GC) and the native
+      # microtask drain hook.
+      def install_lifecycle_abi!
+        @backend.define_host_function("__rb_release_handle") do |handle|
+          @handles.release(handle)
+          nil
+        end
+        # Run a Ruby microtask previously registered by schedule_native_microtask,
+        # invoked from the resolved-promise job scheduleMicrotask queued.
+        @backend.define_host_function("__rb_run_microtask") do |id|
+          callback = @microtask_procs.delete(id)
+          callback&.call
+          nil
+        end
+      end
+
+      # Reverse construction (`new Event(...)`) and interface static methods
+      # (URL.createObjectURL, …).
+      def install_construction_abi!
         # `new Event(...)` / `new DOMException(...)` from a bare interface
         # constructor — resolve the named constructor and build. Returns nil when
         # the interface isn't constructable, so the JS side throws.
@@ -254,6 +287,10 @@ module Dommy
             ctor.respond_to?(:__js_call__) ? wrap(ctor.__js_call__(method, unwrap(args))) : nil
           end
         end
+      end
+
+      # customElements.define / .upgrade, delegated to Dommy's registry.
+      def install_custom_elements_abi!
         # 1d: customElements.define(name, JSClass) wires a Dommy custom element.
         @backend.define_host_function("__rb_define_custom_element") do |name, observed|
           @custom_elements.define(name, Array(observed))
@@ -264,6 +301,11 @@ module Dommy
           @custom_elements.upgrade(host(handle))
           nil
         end
+      end
+
+      # Run the JS half of the bridge and seed the interface prototypes. Must run
+      # after every host function above is registered.
+      def seed_runtime!
         @backend.run_compiled(self.class.host_runtime_runnable)
         # Seed base interface prototypes from the single Ruby-side hierarchy.
         @backend.eval("__rbHost.seedInterfaces(#{JSON.generate(DomInterfaces::BASE_CHAINS)});")
