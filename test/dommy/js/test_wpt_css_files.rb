@@ -29,6 +29,7 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
   VAR_INVALID_SYNTAX = ->(name) { name.include?("should not set") }
 
   wpt_files(
+    "css/cssom/cssom-setProperty-shorthand.html" => { min_pass: 76, expected: [] },
     "css/css-syntax/declarations-trim-whitespace.html" => { min_pass: 9, expected: [] },
     "css/css-variables/var-parsing.html" => { min_pass: 3, expected: VAR_INVALID_SYNTAX },
     "css/css-variables/variable-cycles.html" => { min_pass: 11, expected: [] },

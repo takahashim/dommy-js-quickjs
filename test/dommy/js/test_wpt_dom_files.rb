@@ -93,6 +93,16 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     },
     "dom/nodes/DocumentFragment-constructor.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Document-getElementsByClassName.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Document-implementation.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/DOMImplementation-hasFeature.html" => { min_pass: 137, expected: [] },
+    "dom/nodes/DOMImplementation-createDocumentType.html" => {
+      min_pass: 80,
+      # Qualified-name QName validation isn't enforced for createDocumentType.
+      expected: [
+        "createDocumentType(\"edi:>\", \"\", \"\") should throw INVALID_CHARACTER_ERR",
+        "createDocumentType(\"edi:a \", \"\", \"\") should throw INVALID_CHARACTER_ERR"
+      ]
+    },
     "dom/nodes/Element-childElementCount.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-firstElementChild.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-getElementsByClassName.html" => { min_pass: 3, expected: [] },
