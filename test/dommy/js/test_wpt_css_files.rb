@@ -17,15 +17,13 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
   # file (relative to the vendored WPT root) => { min_pass:, expected: [names] }
   EXPECTED = {
     "css/cssom/CSSStyleSheet.html" => {
-      min_pass: 12,
+      min_pass: 14,
       expected: [
         # CSSOM rule subclasses aren't exposed as JS constructors
         "addRule with @media rule",
         # addRule rule text isn't re-serialized (Dommy keeps verbatim cssText)
         "addRule with #foo selectors",
-        'addRule with no argument adds "undefined" selector',
-        # SameObject identity of cssRules across bridge calls (host-object wrapper)
-        "insertRule with #bar selector", "deleteRule(1)"
+        'addRule with no argument adds "undefined" selector'
       ]
     },
     "css/cssom/MediaList.html" => {
