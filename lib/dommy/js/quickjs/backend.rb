@@ -26,6 +26,26 @@ module Dommy
           @vm.eval_code(js, async: true)
         end
 
+        # Install the ESM module resolver: a callable `(specifier, importer) ->
+        # source String | { code:, as: } | nil` the engine consults for every
+        # static/dynamic `import`. nil clears it (engine default loader).
+        def module_loader=(callable)
+          @vm.module_loader = callable
+        end
+
+        # Evaluate `source` as an ES module (its `import`s resolved through the
+        # module loader). `* as` with no globalization runs it for side effects.
+        def import_module(source)
+          @vm.import("* as __dommy_mod", from: source, code_to_expose: "")
+        end
+
+        # Evaluate the module at `url` (resolved + fetched by the module loader).
+        # The importer of its relative imports is `url`, so they resolve
+        # correctly — unlike an inline module's synthetic filename.
+        def import_module_url(url)
+          @vm.import("* as __dommy_mod", filename: url, code_to_expose: "")
+        end
+
         def define_host_function(name, &block)
           @vm.define_function(name, &block)
         end

@@ -180,10 +180,10 @@ class Dommy::Js::TestCapybaraAdapter < Minitest::Test
   def test_page_load_runs_scripts_in_document_order
     @driver.visit("/scripts")
 
-    assert_equal %w[inline external DCL load], @driver.evaluate_script("window.__order")
+    assert_equal %w[inline external MODULE_RAN DCL load], @driver.evaluate_script("window.__order")
     assert_equal "after", @driver.evaluate_script('document.getElementById("head").textContent'),
                  "inline script's DOM mutation must be visible"
-    refute_includes @driver.evaluate_script("window.__order"), "MODULE_RAN", "type=module must be skipped"
+    assert_includes @driver.evaluate_script("window.__order"), "MODULE_RAN", "type=module now runs (Phase 4)"
     assert_equal "complete", @driver.evaluate_script("document.readyState")
   end
 

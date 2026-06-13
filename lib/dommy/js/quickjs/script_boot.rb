@@ -22,19 +22,56 @@ module Dommy
 
         def run_document_scripts(runtime, document, resources: nil, on_error: nil)
           runtime.set_document_ready_state("loading")
-          document.scripts.each { |el| run_one(runtime, document, el, resources, on_error) }
+          loader = install_module_loader(runtime, document, resources)
+          document.scripts.each { |el| run_one(runtime, document, el, resources, loader, on_error) }
           runtime.set_document_ready_state("interactive")
           runtime.set_document_ready_state("complete")
         end
 
-        def run_one(runtime, document, element, resources, on_error)
+        # Wire the ESM resolver before any module runs: parse the page's first
+        # <script type="importmap">, then resolve bare specifiers through it and
+        # fetch module sources through `resources`. Returns the loader so inline
+        # modules can be seeded under a document URL.
+        def install_module_loader(runtime, document, resources)
+          import_map = parse_import_map(document)
+          base = document.base_uri
+          base = document.url if base.to_s.empty?
+          loader = ModuleLoader.new(resources, import_map, base_url: base)
+          # The engine requires a Proc specifically.
+          runtime.module_loader = ->(specifier, importer) { loader.call(specifier, importer) }
+          loader
+        end
+
+        def parse_import_map(document)
+          el = document.scripts.find { |s| s.type.to_s.strip.downcase == "importmap" }
+          ImportMap.parse(el ? el.text : "")
+        end
+
+        def run_one(runtime, document, element, resources, loader, on_error)
           if (body = element.__internal_take_pending_script__)
             with_current_script(document, element) { runtime.load_script(body) }
           elsif (src = element.__internal_take_pending_src__)
             run_external(runtime, document, element, src, resources)
+          elsif (mod = element.__internal_take_pending_module__)
+            run_module(runtime, document, mod, loader)
           end
         rescue StandardError => e
           on_error&.call(e)
+        end
+
+        # An ES module script. `currentScript` is null for modules (spec), so it
+        # is not set. An inline body is seeded under the document URL (so its
+        # `import.meta.url` is the page and its relative imports resolve against
+        # it); an external module loads by its own URL.
+        def run_module(runtime, document, mod, loader)
+          kind, value = mod
+          if kind == :inline
+            base = document.base_uri
+            base = document.url if base.to_s.empty?
+            runtime.load_module_url(loader.seed_inline(base, value))
+          elsif (url = resolve_url(document, value))
+            runtime.load_module_url(url)
+          end
         end
 
         def run_external(runtime, document, element, src, resources)

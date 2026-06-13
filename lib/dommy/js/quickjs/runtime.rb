@@ -78,6 +78,29 @@ module Dommy
           nil
         end
 
+        # Install the ESM module resolver (see Backend#module_loader=). A
+        # callable `(specifier, importer) -> source | {code:, as:} | nil`.
+        def module_loader=(callable)
+          @backend.module_loader = callable
+        end
+
+        # Evaluate an inline `<script type="module">` body as an ES module (run
+        # for side effects). Bare specifiers / absolute paths in its imports
+        # resolve through the module loader. Drains microtasks afterward.
+        def load_module(source)
+          @backend.import_module(source)
+          drain_microtasks
+          nil
+        end
+
+        # Evaluate an external module by URL (the loader fetches it); its
+        # relative imports resolve against that URL. Drains microtasks.
+        def load_module_url(url)
+          @backend.import_module_url(url)
+          drain_microtasks
+          nil
+        end
+
         # Evaluate JS and return its value, with DOM nodes decoded to Dommy
         # objects (rather than the empty Hash a raw proxy becomes crossing to
         # Ruby). Accepts either an expression (`document.title`) or a statement

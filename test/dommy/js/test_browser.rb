@@ -31,10 +31,10 @@ class Dommy::Js::TestBrowser < Minitest::Test
 
   def test_boots_scripts_in_document_order_with_lifecycle
     Dommy::Browser.open(PAGE, url: "http://example.test/", resources: resources) do |b|
-      assert_equal %w[inline external DCL load], b.evaluate("window.__order")
+      assert_equal %w[inline external MODULE_RAN DCL load], b.evaluate("window.__order")
       assert_equal "after", b.evaluate('document.getElementById("head").textContent')
       assert_equal "complete", b.evaluate("document.readyState")
-      refute_includes b.evaluate("window.__order"), "MODULE_RAN"
+      assert_includes b.evaluate("window.__order"), "MODULE_RAN", "type=module now runs (Phase 4)"
     end
   end
 
