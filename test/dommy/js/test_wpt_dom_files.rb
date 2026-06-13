@@ -59,10 +59,32 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
 
     # --- nodes (high-pass, HTML-only subset) -----------------------------
     "dom/nodes/Element-classlist.html" => { min_pass: 1420, expected: [] },
+    "dom/nodes/Element-firstElementChild.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-getElementsByClassName.html" => { min_pass: 3, expected: [] },
     "dom/nodes/Element-tagName.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/Node-cloneNode.html" => {
+      min_pass: 119,
+      # cloneNode of elements whose dedicated interface Dommy doesn't model as a
+      # distinct class (canvas/col/datalist/fieldset/…), plus createElementNS and
+      # XML-document factories (createProcessingInstruction / createDocument).
+      expected: [
+        "createElement(canvas)", "createElement(col)", "createElement(colgroup)",
+        "createElement(datalist)", "createElement(dir)", "createElement(dl)",
+        "createElement(fieldset)", "createElement(font)", "createElement(frame)",
+        "createElement(frameset)", "createElement(param)",
+        "createElementNS HTML", "createElementNS non-HTML",
+        "createProcessingInstruction",
+        "implementation.createDocumentType", "implementation.createDocument"
+      ]
+    },
+    "dom/nodes/Node-contains.html" => { min_pass: 1482, expected: [] },
     "dom/nodes/Node-isEqualNode.html" => { min_pass: 9, expected: [] },
+    "dom/nodes/Node-isSameNode.html" => {
+      min_pass: 8,
+      # Document identity comparison (no second-document reference to compare).
+      expected: ["documents should be compared on reference"]
+    },
     "dom/nodes/Node-nodeName.html" => { min_pass: 6, expected: [] },
     "dom/nodes/ParentNode-children.html" => { min_pass: 1, expected: [] },
     "dom/nodes/ParentNode-querySelector-case-insensitive.html" => { min_pass: 2, expected: [] },
