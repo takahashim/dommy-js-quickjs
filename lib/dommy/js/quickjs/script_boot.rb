@@ -34,9 +34,7 @@ module Dommy
         # modules can be seeded under a document URL.
         def install_module_loader(runtime, document, resources)
           import_map = parse_import_map(document)
-          base = document.base_uri
-          base = document.url if base.to_s.empty?
-          loader = ModuleLoader.new(resources, import_map, base_url: base)
+          loader = ModuleLoader.new(resources, import_map, base_url: document_base(document))
           # The engine requires a Proc specifically.
           runtime.module_loader = ->(specifier, importer) { loader.call(specifier, importer) }
           loader
@@ -81,9 +79,8 @@ module Dommy
         # The page URL an inline module is identified by (its import.meta.url and
         # the base for its relative imports).
         def inline_base(document)
-          base = document.base_uri
-          base = document.url if base.to_s.empty?
-          base.to_s.empty? ? "about:blank" : base.to_s
+          base = document_base(document)
+          base.empty? ? "about:blank" : base
         end
 
         def run_external(runtime, document, element, src, resources)
@@ -103,11 +100,18 @@ module Dommy
         # Resolve a script's `src` against the document's base URL, which is the
         # realm's own location (correct for frames too).
         def resolve_url(document, src)
-          base = document.base_uri
-          base = document.url if base.to_s.empty?
-          ::URI.join(base.to_s, src).to_s
+          ::URI.join(document_base(document), src).to_s
         rescue ::URI::InvalidURIError
           nil
+        end
+
+        # The document's effective base URL string: its `<base>`-derived base
+        # URI, falling back to the realm's own location. Empty string when
+        # neither is set (callers decide their own fallback).
+        def document_base(document)
+          base = document.base_uri
+          base = document.url if base.to_s.empty?
+          base.to_s
         end
 
         def with_current_script(document, element)

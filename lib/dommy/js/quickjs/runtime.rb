@@ -218,45 +218,19 @@ module Dommy
         # CSS / fetch / addEventListener / .... Call after install_window. This
         # is what lets real frontend bundles (Turbo, …) run unmodified.
         def install_browser_globals
+          alias_browser_globals
+          mirror_builtins_on_window
+          self
+        end
+
+        # WPT-only scaffolding: a minimal `WebAssembly.Memory` whose `.buffer`
+        # is a SharedArrayBuffer. The engine ships a real SharedArrayBuffer but
+        # no WebAssembly, and WPT's `common/sab.js` derives the SAB constructor
+        # from `new WebAssembly.Memory({shared:true}).buffer.constructor`. This
+        # is test-harness-only (real pages never need it), so it is opt-in and
+        # NOT part of #install_browser_globals.
+        def install_wasm_memory_shim
           @backend.eval(<<~JS)
-            globalThis.self = globalThis;
-            // Top-level window: parent/top are the window itself (spec), so
-            // frame-walking loops terminate instead of dereferencing undefined.
-            globalThis.parent = globalThis;
-            globalThis.top = globalThis;
-            globalThis.location = window.location;
-            globalThis.history = window.history;
-            globalThis.navigator = window.navigator;
-            globalThis.sessionStorage = window.sessionStorage;
-            globalThis.localStorage = window.localStorage;
-            globalThis.CSS = window.CSS;
-            globalThis.getComputedStyle = (...args) => window.getComputedStyle(...args);
-            globalThis.matchMedia = (...args) => window.matchMedia(...args);
-            globalThis.fetch = (...args) => window.fetch(...args);
-            globalThis.addEventListener = (...args) => window.addEventListener(...args);
-            globalThis.removeEventListener = (...args) => window.removeEventListener(...args);
-            globalThis.dispatchEvent = (event) => window.dispatchEvent(event);
-            // The window IS the global object, so JS built-in constructors and
-            // namespaces are also `window` properties (`window.String`,
-            // `window.Number`, …). Mirror them as own props on the window proxy
-            // so code that reads constructors off `window` (e.g. the WPT
-            // reflection harness's `window[type]` casts) resolves them.
-            for (const __n of [
-              "String", "Boolean", "Number", "BigInt", "Symbol", "Object", "Array",
-              "Function", "Date", "RegExp", "Promise", "Map", "Set", "WeakMap",
-              "WeakSet", "Math", "JSON", "Reflect", "Proxy", "Error", "TypeError",
-              "RangeError", "SyntaxError", "Infinity", "NaN", "undefined",
-              "parseInt", "parseFloat", "isNaN", "isFinite", "globalThis",
-            ]) {
-              try { window[__n] = globalThis[__n]; } catch (__e) {}
-            }
-            // Minimal WebAssembly.Memory: the engine provides a real
-            // SharedArrayBuffer but no WebAssembly, and WPT's `common/sab.js`
-            // derives the SAB constructor from
-            // `new WebAssembly.Memory({shared:true}).buffer.constructor`. A
-            // Memory whose `.buffer` is a SharedArrayBuffer is enough to let
-            // those tests (encodeInto, TextDecoder copy, …) exercise shared
-            // buffers with the real codec logic.
             if (typeof globalThis.WebAssembly === "undefined" && typeof globalThis.SharedArrayBuffer === "function") {
               globalThis.WebAssembly = {
                 Memory: function (opts) {
@@ -288,6 +262,50 @@ module Dommy
         end
 
         private
+
+        # Alias the bare browser globals frameworks reach for onto the installed
+        # window (self/parent/top/location/history/navigator/storages/CSS/fetch/
+        # event methods). This is what lets real frontend bundles run unmodified.
+        def alias_browser_globals
+          @backend.eval(<<~JS)
+            globalThis.self = globalThis;
+            // Top-level window: parent/top are the window itself (spec), so
+            // frame-walking loops terminate instead of dereferencing undefined.
+            globalThis.parent = globalThis;
+            globalThis.top = globalThis;
+            globalThis.location = window.location;
+            globalThis.history = window.history;
+            globalThis.navigator = window.navigator;
+            globalThis.sessionStorage = window.sessionStorage;
+            globalThis.localStorage = window.localStorage;
+            globalThis.CSS = window.CSS;
+            globalThis.getComputedStyle = (...args) => window.getComputedStyle(...args);
+            globalThis.matchMedia = (...args) => window.matchMedia(...args);
+            globalThis.fetch = (...args) => window.fetch(...args);
+            globalThis.addEventListener = (...args) => window.addEventListener(...args);
+            globalThis.removeEventListener = (...args) => window.removeEventListener(...args);
+            globalThis.dispatchEvent = (event) => window.dispatchEvent(event);
+          JS
+        end
+
+        # The window IS the global object, so JS built-in constructors and
+        # namespaces are also `window` properties (`window.String`,
+        # `window.Number`, …). Mirror them as own props on the window proxy so
+        # code that reads constructors off `window` (e.g. the WPT reflection
+        # harness's `window[type]` casts) resolves them.
+        def mirror_builtins_on_window
+          @backend.eval(<<~JS)
+            for (const __n of [
+              "String", "Boolean", "Number", "BigInt", "Symbol", "Object", "Array",
+              "Function", "Date", "RegExp", "Promise", "Map", "Set", "WeakMap",
+              "WeakSet", "Math", "JSON", "Reflect", "Proxy", "Error", "TypeError",
+              "RangeError", "SyntaxError", "Infinity", "NaN", "undefined",
+              "parseInt", "parseFloat", "isNaN", "isFinite", "globalThis",
+            ]) {
+              try { window[__n] = globalThis[__n]; } catch (__e) {}
+            }
+          JS
+        end
 
         def eval_tagged(inner_expr)
           @backend.eval_awaited("__rbHost.tag(#{inner_expr});")

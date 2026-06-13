@@ -48,7 +48,7 @@ module Dommy
         # Advance the current realm's virtual clock, running timers that come
         # due, then drain.
         def advance_time(ms)
-          @current_document.call&.default_view&.scheduler&.advance_time(ms)
+          scheduler_of(@current_document.call)&.advance_time(ms)
           current_runtime.drain_microtasks
           self
         end
@@ -65,7 +65,7 @@ module Dommy
         # Snapshot iteration: a fired timer may navigate and replace the map.
         def pump
           @runtimes.to_a.each do |doc, runtime|
-            doc&.default_view&.scheduler&.advance_time(PUMP_SLICE_MS)
+            scheduler_of(doc)&.advance_time(PUMP_SLICE_MS)
             runtime.drain_microtasks
           end
         end
@@ -85,6 +85,13 @@ module Dommy
         end
 
         private
+
+        # The deterministic scheduler driving a document's realm (nil when the
+        # document or its window is absent), keeping the `doc -> window ->
+        # scheduler` walk in one place.
+        def scheduler_of(doc)
+          doc&.default_view&.scheduler
+        end
 
         # A top-level navigation invalidates every realm (the old documents are
         # gone): dispose all, then eagerly build the new top realm so its

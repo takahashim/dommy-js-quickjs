@@ -56,7 +56,8 @@ module Dommy
       end
     end
 
-    def initialize(html, url: "http://localhost/", resources: nil, execute_scripts: true, strict: true, settle: true)
+    def initialize(html, url: "http://localhost/", resources: nil, execute_scripts: true, strict: true, settle: true,
+      wasm_memory_shim: false)
       @resources = resources
       @strict = strict
       @js_errors = []
@@ -74,6 +75,9 @@ module Dommy
       @runtime.define_host_object("document", @window.document)
       @runtime.install_window(@window)
       @runtime.install_browser_globals
+      # Opt-in WPT scaffolding (common/sab.js derives SharedArrayBuffer through
+      # WebAssembly.Memory); off by default so real pages don't see the shim.
+      @runtime.install_wasm_memory_shim if wasm_memory_shim
       @window.globals["__fetch_handler__"] = Resources::FetchHandler.new(@resources) if @resources
 
       if execute_scripts

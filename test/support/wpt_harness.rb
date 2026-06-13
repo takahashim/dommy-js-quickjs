@@ -35,6 +35,9 @@ module Dommy
 
       def initialize(html = "<!DOCTYPE html><html><head></head><body></body></html>", fetch_stub: nil, iframe_docs: nil)
         @harness = BrowserHarness.new(html, fetch_stub: fetch_stub, iframe_docs: iframe_docs)
+        # WPT's common/sab.js derives the SharedArrayBuffer constructor through
+        # WebAssembly.Memory; install that test-only shim for the WPT realm.
+        @harness.runtime.install_wasm_memory_shim
         @harness.load_script(HARNESS)
         @harness.execute(<<~JS)
           // We harvest results programmatically via add_completion_callback, so

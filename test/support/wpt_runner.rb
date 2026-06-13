@@ -48,7 +48,8 @@ module Dommy
 
           browser = ::Dommy::Browser.new(
             html, url: url, resources: WptResources.build,
-            execute_scripts: true, strict: false, settle: false
+            execute_scripts: true, strict: false, settle: false,
+            wasm_memory_shim: true
           )
           harvest(browser)
         ensure
