@@ -15,13 +15,13 @@ module Dommy
       # cross as plain Ruby values. Callbacks the guest registers become JS
       # functions (also refs) that route back through `__rbWasmInvoke`.
       class WasmBridge
-        # An opaque handle to a JS value living in the VM. `ref` is the integer
-        # id into the JS-side jsRefs table.
-        JSValue = Struct.new(:ref) do
-          def to_s
-            "#<JSValue ref=#{ref}>"
-          end
-        end
+        # An opaque handle to a JS value living in the VM, identified by its id
+        # into the JS-side `jsRefs` table. This is the SAME table and the SAME
+        # `__rb_js_ref` tag the Proxy bridge's dehydrate/rehydrate use (see
+        # host_runtime.js), so a ref is one concept across both bridges — hence a
+        # single shared type. Aliased here so existing `WasmBridge::JSValue`
+        # callers keep resolving.
+        JSValue = ::Dommy::Bridge::JSValue
 
         def initialize(backend)
           @backend = backend
@@ -107,7 +107,7 @@ module Dommy
         # #on_invoke dispatcher can pack the values it hands back into JS.
         def pack(value)
           case value
-          when JSValue then {"__rb_js_ref" => value.ref}
+          when JSValue then {WireTags::JS_REF => value.ref}
           when nil, true, false, Integer, Float, String then value
           when Symbol then value.to_s
           when Array then value.map { |e| pack(e) }
@@ -122,14 +122,14 @@ module Dommy
         def unpack(value)
           case value
           when Hash
-            if value.key?("__rb_js_ref")
-              JSValue.new(value["__rb_js_ref"])
-            elsif value.key?("__rb_undefined")
+            if value.key?(WireTags::JS_REF)
+              JSValue.new(value[WireTags::JS_REF])
+            elsif value.key?(WireTags::UNDEFINED)
               nil
-            elsif value.key?("__rb_bytes")
-              value["__rb_bytes"]
-            elsif value.key?("__rb_arraybuffer")
-              value["__rb_arraybuffer"]
+            elsif value.key?(WireTags::BYTES)
+              value[WireTags::BYTES]
+            elsif value.key?(WireTags::ARRAY_BUFFER)
+              value[WireTags::ARRAY_BUFFER]
             else
               value.each_with_object({}) { |(k, v), h| h[k] = unpack(v) }
             end

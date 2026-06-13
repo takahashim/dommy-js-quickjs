@@ -14,6 +14,7 @@ end
 # The engine-agnostic host layer (Dommy::Js::Runtime port + registry,
 # ScriptBoot/ImportMap/ModuleLoader, Dommy::Browser) lives in the `dommy` gem,
 # loaded above via `require "dommy"`. This gem provides the QuickJS backend.
+require_relative "wire_tags"
 require_relative "handle_table"
 require_relative "dom_interfaces"
 require_relative "constructor_registry"

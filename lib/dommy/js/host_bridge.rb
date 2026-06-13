@@ -279,8 +279,8 @@ module Dommy
       # throw ("__rb_cb_threw__") — the thrown value re-raised (raising) or
       # swallowed (the default, returning nil).
       def callback_result(raw, raising)
-        if raw.is_a?(Hash) && raw.key?("__rb_cb_threw__")
-          raise Dommy::Bridge::ThrowValue.new(unwrap(raw["__rb_cb_threw__"])) if raising
+        if raw.is_a?(Hash) && raw.key?(WireTags::CALLBACK_THREW)
+          raise Dommy::Bridge::ThrowValue.new(unwrap(raw[WireTags::CALLBACK_THREW])) if raising
 
           return nil
         end
@@ -298,17 +298,17 @@ module Dommy
       rescue Dommy::Bridge::ThrowValue => e
         # A host method threw an arbitrary value (e.g. throwIfAborted's reason);
         # re-throw it verbatim JS-side, identity preserved.
-        {"__rb_throw__" => wrap(e.value)}
+        {WireTags::THROW => wrap(e.value)}
       rescue Dommy::DOMException => e
-        {"__rb_exception__" => {"name" => e.name, "message" => e.message, "code" => e.code}}
+        {WireTags::EXCEPTION => {"name" => e.name, "message" => e.message, "code" => e.code}}
       rescue Dommy::Bridge::TypeError => e
         # A deliberate, spec-mandated JS TypeError (e.g. `new URL(bad)`). Tagged
         # so rehydrate rethrows a real `TypeError` — `assert_throws_js(TypeError,
         # …)` checks `instanceof TypeError`, which a DOMException/Error fails.
-        {"__rb_exception__" => {"name" => "TypeError", "message" => e.message, "js_native" => true}}
+        {WireTags::EXCEPTION => {"name" => "TypeError", "message" => e.message, "js_native" => true}}
       rescue Dommy::Bridge::RangeError => e
         # A spec-mandated JS RangeError (e.g. `new Response(b, {status: 42})`).
-        {"__rb_exception__" => {"name" => "RangeError", "message" => e.message, "js_native" => true}}
+        {WireTags::EXCEPTION => {"name" => "RangeError", "message" => e.message, "js_native" => true}}
       end
 
       # Ruby -> JS: tag bridge-able objects so the JS side can proxy them.
@@ -318,25 +318,25 @@ module Dommy
         # A `__js_call__` may return the UNDEFINED sentinel for a void op; marshal
         # it so the JS side yields `undefined` rather than `null`.
         if defined?(Dommy::Bridge::UNDEFINED) && value.equal?(Dommy::Bridge::UNDEFINED)
-          return {"__rb_undefined" => true}
+          return {WireTags::UNDEFINED => true}
         end
         # A byte buffer tagged ArrayBuffer crosses back as a bare ArrayBuffer
         # (checked before Bytes, since ArrayBuffer < Bytes).
         if defined?(Dommy::Bridge::ArrayBuffer) && value.is_a?(Dommy::Bridge::ArrayBuffer)
-          return {"__rb_arraybuffer" => value.to_a}
+          return {WireTags::ARRAY_BUFFER => value.to_a}
         end
         # A byte buffer crosses back as a JS Uint8Array.
         if defined?(Dommy::Bridge::Bytes) && value.is_a?(Dommy::Bridge::Bytes)
-          return {"__rb_bytes" => value.to_a}
+          return {WireTags::BYTES => value.to_a}
         end
         # An opaque JS value returns as its original JS object (identity kept).
         if defined?(Dommy::Bridge::JSValue) && value.is_a?(Dommy::Bridge::JSValue)
-          return {"__rb_js_ref" => value.ref}
+          return {WireTags::JS_REF => value.ref}
         end
         # A JS EventListener object wrapped on the way in returns as that same JS
         # object (so removeEventListener(el, this) reaches the right listener).
         if value.is_a?(HostEventListener)
-          return {"__rb_js_ref" => value.ref}
+          return {WireTags::JS_REF => value.ref}
         end
 
         # A host collection that subclasses Array (e.g. Dommy::NodeList < Array)
@@ -345,7 +345,7 @@ module Dommy
         # flattened to a plain JS array by the `when Array` branch below. Plain
         # Arrays (not bridgeable) still map element-wise.
         if value.is_a?(Array) && bridgeable?(value)
-          return {"__rb_handle" => @handles.register(value)}
+          return {WireTags::HANDLE => @handles.register(value)}
         end
 
         case value
@@ -356,10 +356,10 @@ module Dommy
         when HostCallback
           # A JS function that crossed into Ruby returns as the same live JS
           # function (not a proxy), so callbacks nested in objects round-trip.
-          {"__rb_callback" => value.id}
+          {WireTags::CALLBACK => value.id}
         else
           if bridgeable?(value)
-            {"__rb_handle" => @handles.register(value)}
+            {WireTags::HANDLE => @handles.register(value)}
           else
             value
           end
@@ -381,23 +381,23 @@ module Dommy
         when Array
           value.map { |element| unwrap(element) }
         when Hash
-          if value.key?("__rb_handle")
+          if value.key?(WireTags::HANDLE)
             # Tolerant: an argument referencing a released/invalid node resolves
             # to nil rather than crashing (e.g. Vue passes a transient handle
             # during v-model setup). A receiver handle still uses strict #host.
-            @handles.lookup(value["__rb_handle"])
-          elsif value.key?("__rb_callback")
-            id = value["__rb_callback"]
+            @handles.lookup(value[WireTags::HANDLE])
+          elsif value.key?(WireTags::CALLBACK)
+            id = value[WireTags::CALLBACK]
             @callback_objects[id] ||= HostCallback.new(self, id)
-          elsif value.key?("__rb_js_ref")
-            ref = value["__rb_js_ref"]
-            if value["__rb_handle_event"]
+          elsif value.key?(WireTags::JS_REF)
+            ref = value[WireTags::JS_REF]
+            if value[WireTags::HANDLE_EVENT]
               # A JS object implementing EventListener (handleEvent). Wrap it as a
               # Ruby listener whose #handle_event routes back to its handleEvent.
               # Memoized by ref so the same JS object yields the same wrapper,
               # letting removeEventListener match the listener by identity.
-              @listener_objects[ref] ||= HostEventListener.new(self, ref, value["__rb_js_label"])
-            elsif value["__rb_accept_node"]
+              @listener_objects[ref] ||= HostEventListener.new(self, ref, value[WireTags::JS_LABEL])
+            elsif value[WireTags::ACCEPT_NODE]
               # A NodeFilter callback-interface object. Wrap it so a traversal
               # invokes acceptNode on the live JS object (fresh getter, this =
               # object, exceptions propagated).
@@ -406,16 +406,16 @@ module Dommy
               # An opaque JS value (a non-plain object Ruby just stores and
               # returns, e.g. an abort reason) — kept as a handle so it
               # round-trips with identity rather than being flattened to a Hash.
-              Dommy::Bridge::JSValue.new(ref, value["__rb_js_label"])
+              Dommy::Bridge::JSValue.new(ref, value[WireTags::JS_LABEL])
             else
               value
             end
-          elsif value.key?("__rb_undefined")
+          elsif value.key?(WireTags::UNDEFINED)
             # A top-level JS `undefined` argument — distinct from JS null (nil).
             defined?(Dommy::Bridge::UNDEFINED) ? Dommy::Bridge::UNDEFINED : nil
-          elsif value.key?("__rb_bytes")
+          elsif value.key?(WireTags::BYTES)
             # A JS ArrayBuffer / TypedArray argument arrives as a byte buffer.
-            defined?(Dommy::Bridge::Bytes) ? Dommy::Bridge::Bytes.new(value["__rb_bytes"]) : value["__rb_bytes"]
+            defined?(Dommy::Bridge::Bytes) ? Dommy::Bridge::Bytes.new(value[WireTags::BYTES]) : value[WireTags::BYTES]
           else
             value.transform_values { |element| unwrap(element) }
           end
