@@ -47,6 +47,7 @@ module Dommy
       TESTDRIVER_SHIM = <<~JS
         globalThis.test_driver = globalThis.test_driver || {};
         test_driver.get_computed_role = (el) => Promise.resolve(el.__internal_computed_role__());
+        test_driver.get_computed_label = (el) => Promise.resolve(el.__internal_computed_label__());
       JS
 
       module_function
