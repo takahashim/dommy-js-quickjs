@@ -6,7 +6,11 @@ module Dommy
     # (`new Event(...)`, `new DOMException(...)`). The window object is the
     # source for most constructors — it exposes them via __js_get__ — while a
     # few not on the window are provided directly. Engine-agnostic.
-    class ConstructorRegistry
+    #
+    # A *resolver*, not a store: it holds no map and looks each name up live
+    # via the window. Named distinctly from Dommy::Bridge::ConstructorRegistry
+    # (the abstract name -> Bridge::Constructor map), which is a different thing.
+    class ConstructorResolver
       # The window whose __js_get__ exposes Event/CustomEvent/MouseEvent/… .
       attr_writer :source
 

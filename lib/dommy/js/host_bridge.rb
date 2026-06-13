@@ -15,7 +15,7 @@ module Dommy
     #
     # Two collaborators keep the marshalling core free of DOM specifics:
     #   DomInterfaces       — interface name/chain derivation (instanceof support)
-    #   ConstructorRegistry — `new Event(...)` style reverse construction
+    #   ConstructorResolver — `new Event(...)` style reverse construction
     #
     # Backend contract:
     #   backend.eval(js)                         -> evaluate top-level JS
@@ -44,8 +44,8 @@ module Dommy
         @handles = HandleTable.new
         @callback_objects = {}
         @listener_objects = {}
-        @constructors = ConstructorRegistry.new
-        @custom_elements = CustomElements.new(self)
+        @constructor_resolver = ConstructorResolver.new
+        @custom_element_bridge = CustomElementBridge.new(self)
         @microtask_procs = {}
         @microtask_seq = 0
         install!
@@ -63,8 +63,8 @@ module Dommy
       # distinct from define_host_object so the generic binder has no hidden
       # side effects.
       def window=(win)
-        @constructors.source = win
-        @custom_elements.window = win
+        @constructor_resolver.source = win
+        @custom_element_bridge.window = win
         # Now that constructors are resolvable, expose their static methods
         # (URL.createObjectURL, …) on the seeded interface globals, and expose
         # the constructors themselves on the window proxy (window.Node,
@@ -102,7 +102,7 @@ module Dommy
       end
 
       # Invoke a JS custom element lifecycle callback (connectedCallback etc.) for
-      # a Dommy node. Called by the bridged custom element class (see CustomElements).
+      # a Dommy node. Called by the bridged custom element class (see CustomElementBridge).
       def invoke_lifecycle(node, callback, args)
         handle = @handles.register(node)
         unwrap(@backend.call_js("__rbHost.invokeLifecycle", handle, callback, wrap(Array(args))))
@@ -261,19 +261,19 @@ module Dommy
         # the interface isn't constructable, so the JS side throws.
         @backend.define_host_function("__rb_construct") do |name, args|
           dom_guard do
-            ctor = @constructors.resolve(name)
+            ctor = @constructor_resolver.resolve(name)
             ctor ? wrap(ctor.__js_new__(unwrap(args))) : nil
           end
         end
         # Static/class methods on an interface constructor (URL.createObjectURL,
         # URL.parse, …): names to expose, and the dispatch.
         @backend.define_host_function("__rb_static_names") do |name|
-          ctor = @constructors.resolve(name)
+          ctor = @constructor_resolver.resolve(name)
           ctor.respond_to?(:__js_class_method_names__) ? ctor.__js_class_method_names__ : []
         end
         @backend.define_host_function("__rb_static_call") do |name, method, args|
           dom_guard do
-            ctor = @constructors.resolve(name)
+            ctor = @constructor_resolver.resolve(name)
             ctor.respond_to?(:__js_call__) ? wrap(ctor.__js_call__(method, unwrap(args))) : nil
           end
         end
@@ -283,12 +283,12 @@ module Dommy
       def install_custom_elements_abi!
         # 1d: customElements.define(name, JSClass) wires a Dommy custom element.
         @backend.define_host_function("__rb_define_custom_element") do |name, observed|
-          @custom_elements.define(name, Array(observed))
+          @custom_element_bridge.define(name, Array(observed))
           nil
         end
         # 1d: customElements.upgrade(root) — delegate to Dommy's registry.
         @backend.define_host_function("__rb_upgrade_custom_elements") do |handle|
-          @custom_elements.upgrade(host(handle))
+          @custom_element_bridge.upgrade(host(handle))
           nil
         end
       end

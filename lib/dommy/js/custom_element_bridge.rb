@@ -8,7 +8,11 @@ module Dommy
     # reactions (connected/disconnected/adopted/attributeChanged) route back to
     # the JS instance through the bridge. The JS class's constructor itself runs
     # on the JS side via the construction-stack upgrade in host_runtime.js.
-    class CustomElements
+    #
+    # Named distinctly from Dommy::CustomElementRegistry (the DOM
+    # window.customElements registry); this is the JS<->Dommy wiring, not the
+    # registry itself.
+    class CustomElementBridge
       attr_writer :window
 
       def initialize(bridge)
