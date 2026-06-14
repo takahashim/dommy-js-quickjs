@@ -5,6 +5,14 @@ require "minitest/test_task"
 
 Minitest::TestTask.create
 
+namespace :test do
+  desc "Run the full test suite including the heavy (thousands-of-subtests) WPT files"
+  task :all do
+    ENV["WPT_HEAVY"] = "1"
+    Rake::Task["test"].invoke
+  end
+end
+
 task default: :test
 
 namespace :wpt do

@@ -15,7 +15,15 @@ module Dommy
     #
     #   expected: an Array of exact subtest names, or a Proc(name) -> bool for a
     #   category of failures (e.g. ->(n) { n.include?("width") } for layout).
+    #
+    #   heavy: true marks a file with thousands of combinatorial subtests that
+    #   dominate the suite's wall-clock (e.g. color-computed-hsl, the big Range
+    #   files). These are skipped by default and only run when WPT_HEAVY is set —
+    #   `rake test:all` sets it; plain `rake test` runs the fast suite.
     module WptConformance
+      # Whether the heavy (multi-second, thousands-of-subtests) WPT files run.
+      def self.heavy? = !ENV["WPT_HEAVY"].to_s.empty?
+
       def self.included(base)
         base.extend(ClassMethods)
       end
@@ -26,6 +34,9 @@ module Dommy
             method_name = "test_#{file.gsub(/[^a-z0-9]+/i, '_')}"
             define_method(method_name) do
               skip "WPT not vendored" unless Dommy::Js::WptRunner.available?
+              if spec[:heavy] && !Dommy::Js::WptConformance.heavy?
+                skip "heavy WPT file; set WPT_HEAVY=1 (or run `rake test:all`) to include it"
+              end
 
               assert_wpt_file(file, min_pass: spec[:min_pass], expected: spec[:expected])
             end

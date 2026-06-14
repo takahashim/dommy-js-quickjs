@@ -36,7 +36,7 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
     "css/selectors/child-indexed-pseudo-class.html" => { min_pass: 54, expected: [] },
     "css/css-color/parsing/color-computed.html" => { min_pass: 16, expected: [] },
     "css/css-color/parsing/color-computed-hex-color.html" => { min_pass: 6, expected: [] },
-    "css/css-color/parsing/color-computed-hsl.html" => { min_pass: 3735, expected: CALC_IN_COLOR },
+    "css/css-color/parsing/color-computed-hsl.html" => { min_pass: 3735, expected: CALC_IN_COLOR, heavy: true },
     "css/cssom/CSSStyleSheet.html" => {
       min_pass: 14,
       expected: [
