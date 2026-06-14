@@ -7,12 +7,15 @@ module Dommy
     module Quickjs
       # Binds HostBridge's abstract backend contract to the `quickjs` gem.
       #
-      # Value-representation conformance: the `quickjs` gem already delivers a
-      # bare JS `undefined` (a host-function argument / call_js result not
-      # carried in a WireTags-tagged value) as the Ruby symbol `:undefined`,
-      # which is exactly what the backend contract requires — so no extra
-      # normalization is needed here; HostBridge#unwrap maps it to
-      # Dommy::Bridge::UNDEFINED.
+      # Value-representation conformance: host_runtime.js now tags a top-level JS
+      # `undefined` itself (`dehydrateTop` -> `{__rb_undefined:true}`) at the
+      # JS->Ruby crossings, so the protocol no longer relies on the backend to
+      # marshal a bare `undefined` to a sentinel — keeping it engine-neutral.
+      # The `quickjs` gem happens to also deliver a bare `undefined` as the Ruby
+      # symbol `:undefined`, which HostBridge#unwrap still accepts as a defensive
+      # fallback (e.g. the `evaluate`/`tag` return path, which dehydrates without
+      # the top-level tag); either way it maps to Dommy::Bridge::UNDEFINED. No
+      # normalization is needed here.
       class Backend
         # The gem's default eval timeout is 100ms, which interrupts large
         # synchronous bridge loops (every property crossing is a Ruby call).
