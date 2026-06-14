@@ -7,8 +7,10 @@ JavaScript executes in an embedded QuickJS VM (via the
 [`quickjs`](https://github.com/hmsk/quickjs.rb) gem). Dommy DOM nodes are bridged
 to JS as objects whose property/method access routes into Dommy's
 `__js_get__` / `__js_set__` / `__js_call__` / `__js_new__` ABI, so JS drives a
-real Dommy document. The QuickJS-specific code is isolated in a small `Backend`;
-the rest of the bridge is engine-agnostic.
+real Dommy document. This gem provides the QuickJS `Backend`; the
+engine-agnostic bridge it plugs into (the `HostBridge` marshalling core and the
+JS-side runtime) lives in the [`dommy`](https://github.com/takahashim/dommy) gem,
+so other engines can reuse it.
 
 The bridge presents a **spec-shaped JS DOM**, not bare proxies: `instanceof`,
 prototype chains, `Object.prototype.toString` brands, constructable interfaces

@@ -4,11 +4,13 @@ require "test_helper"
 require "quickjs"
 require "json"
 
-# Unit tests for the pure-JS bridge runtime (lib/dommy/js/host_runtime.js),
+# Unit tests for the pure-JS bridge runtime (host_runtime.js, shipped from the
+# `dommy` gem and read here via Dommy::Js::HostBridge::HOST_RUNTIME_JS),
 # exercised in a bare QuickJS VM with the Ruby `__rb_*` host functions replaced
-# by JS stubs backed by an in-memory fake host. No Dommy involved — this isolates
-# the JS marshalling/prototype/proxy logic so its edge cases (cycle breaking,
-# callback identity, instanceof chains, Illegal constructor) are covered directly.
+# by JS stubs backed by an in-memory fake host. No Dommy DOM involved — this
+# isolates the JS marshalling/prototype/proxy logic so its edge cases (cycle
+# breaking, callback identity, instanceof chains, Illegal constructor) are
+# covered directly on the QuickJS engine.
 class Dommy::Js::TestHostRuntime < Minitest::Test
   # Fake host: handle 1 is a button-like node; __rb_construct mints CustomEvents.
   FAKE_HOST_JS = <<~'JS'
