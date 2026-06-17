@@ -41,6 +41,37 @@ class Dommy::Js::TestEsm < Minitest::Test
     end
   end
 
+  # A module script is deferred: it must run AFTER the parser-inserted classic
+  # scripts, even when it appears earlier in the document. This is the Nuxt
+  # crash on premium.lp-note.com — the entry module read `window.__NUXT__.config`
+  # before the inline `window.__NUXT__ = {...}` bootstrap below it had run.
+  def test_module_runs_after_a_later_inline_classic_script
+    html = <<~HTML
+      <html><head>
+        <script type="module">window.__seen = (window.__cfg && window.__cfg.app) || "MODULE_RAN_TOO_EARLY";</script>
+        <script>window.__cfg = { app: "READY" };</script>
+      </head><body></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "https://app.test/") do |b|
+      assert_equal "READY", b.evaluate("window.__seen"),
+                   "deferred module should see globals set by a classic script placed after it"
+    end
+  end
+
+  # Classic scripts still run in document order (the module deferral must not
+  # disturb their relative ordering).
+  def test_classic_scripts_keep_document_order
+    html = <<~HTML
+      <html><head>
+        <script>window.__order = "a";</script>
+        <script>window.__order += "b";</script>
+      </head><body></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "https://app.test/") do |b|
+      assert_equal "ab", b.evaluate("window.__order")
+    end
+  end
+
   def test_external_module_with_relative_import
     open('<script type="module" src="https://app.test/uses-relative.js"></script>') do |b|
       assert_equal 42, b.evaluate("window.__double"), "relative import resolved against the module URL"
