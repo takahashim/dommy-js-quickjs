@@ -38,6 +38,35 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # Legacy named constructors: `new Image()` / `new Audio()` / `new Option()`
+  # build the matching element and share the target interface's prototype, so
+  # `instanceof` and `.constructor` resolve like a browser. premium.lp-note.com
+  # (Nuxt) uses `new Image()` for tracking pixels — without this it threw
+  # "'Image' is not defined".
+  def test_legacy_named_constructors
+    Dommy::Browser.open("<html><body></body></html>", url: "http://example.test/") do |b|
+      # Image
+      assert_equal "function", b.evaluate("typeof Image")
+      assert_equal "IMG", b.evaluate("new Image().tagName")
+      assert_equal true, b.evaluate("new Image() instanceof HTMLImageElement")
+      assert_equal "HTMLImageElement", b.evaluate("new Image().constructor.name")
+      assert_equal "32", b.evaluate('new Image(32, 48).getAttribute("width")')
+      assert_equal "48", b.evaluate('new Image(32, 48).getAttribute("height")')
+      assert_equal true, b.evaluate("window.Image === Image")
+      # Audio
+      assert_equal "AUDIO", b.evaluate("new Audio().tagName")
+      assert_equal "auto", b.evaluate('new Audio().getAttribute("preload")')
+      assert_equal "/s.mp3", b.evaluate('new Audio("/s.mp3").getAttribute("src")')
+      assert_equal true, b.evaluate("new Audio() instanceof HTMLAudioElement")
+      # Option
+      assert_equal "OPTION", b.evaluate("new Option().tagName")
+      assert_equal "Hi", b.evaluate('new Option("Hi", "v").textContent')
+      assert_equal "v", b.evaluate('new Option("Hi", "v").value')
+      assert_equal true, b.evaluate('new Option("Hi", "v", true).selected')
+      assert_equal true, b.evaluate("new Option() instanceof HTMLOptionElement")
+    end
+  end
+
   def test_current_script_is_set_during_execution
     Dommy::Browser.open(PAGE, url: "http://example.test/", resources: resources) do |b|
       # The inline script saw a non-null currentScript (its own element; no id → "").
