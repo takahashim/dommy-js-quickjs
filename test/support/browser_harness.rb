@@ -46,7 +46,9 @@ module Dommy
 
       # Register/extend the fetch stub (url => { status:, body:, contentType: }).
       def stub_fetch(map)
-        existing = @window.__js_get__("__fetchy_stub__") || {}
+        # Read the internal stash directly (nil for absent); __js_get__ now returns
+        # the ABSENT sentinel for unset globals (JS-undefined semantics).
+        existing = @window.globals["__fetchy_stub__"] || {}
         @window.__js_set__("__fetchy_stub__", existing.merge(map))
       end
 

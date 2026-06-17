@@ -67,9 +67,11 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
   def test_visit_settles_by_default_and_can_opt_out
     @session = session
 
-    # settle: false leaves the due-now timer pending.
+    # settle: false leaves the due-now timer pending, so __t is never assigned —
+    # an absent property reads as JS `undefined`.
     @session.visit("/onload", settle: false)
-    assert_nil @session.evaluate_script("window.__t"), "settle: false observes the page mid-flight"
+    assert_equal "undefined", @session.evaluate_script("typeof window.__t"),
+      "settle: false observes the page mid-flight (timer not yet fired)"
 
     # The default settles the page: the setTimeout(0) has fired.
     @session.visit("/onload")
@@ -112,5 +114,68 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     plain = Dommy::Rack::Session.new(APP)
     err = assert_raises(Dommy::Rack::Error) { plain.execute_script("1") }
     assert_includes err.message, "javascript: true"
+  end
+end
+
+# Browser globals frameworks read bare (without `window.`) are aliased onto the
+# global scope (regression: `performance.now()` threw "performance is not
+# defined" because only a subset was aliased).
+class Dommy::Js::TestBareGlobals < Minitest::Test
+  APP = ->(_env) { [200, {"content-type" => "text/html"}, ["<!DOCTYPE html><html><body></body></html>"]] }
+
+  def test_bare_browser_globals_resolve_on_global_scope
+    s = Dommy::Rack::Session.new(APP, javascript: true)
+    s.visit("/")
+    assert_equal "object", s.evaluate_script("typeof performance")
+    assert_equal "number", s.evaluate_script("typeof performance.now()")
+    assert_equal "object", s.evaluate_script("typeof crypto")
+    assert_equal "function", s.evaluate_script("typeof structuredClone")
+    assert_equal '{"a":1}', s.evaluate_script("JSON.stringify(structuredClone({a:1}))")
+    assert_equal "aGk=", s.evaluate_script("btoa('hi')") # bare btoa works (no proxy cycle)
+    assert_equal "hi", s.evaluate_script("atob('aGk=')")
+    # window methods that previously cycled into a stack overflow when aliased:
+    assert_equal false, s.evaluate_script("confirm('ok?')")
+    assert_equal "function", s.evaluate_script("typeof getSelection().toString")
+    assert_equal "object", s.evaluate_script("typeof open('about:blank')") # null -> no new window, no recursion
+  ensure
+    s&.dispose_js
+  end
+
+  # Absent properties read as JS `undefined` with `in` false (not null) across
+  # the DOM surface — vue-meta on note.com does `isUndefined(window.Vue) ||
+  # install(window.Vue)`; null made it call install(null) and crash.
+  def test_absent_properties_are_undefined_and_not_in
+    body = "<!DOCTYPE html><html><body><div id=\"x\"></div></body></html>"
+    s = Dommy::Rack::Session.new(->(_e) { [200, {"content-type" => "text/html"}, [body]] }, javascript: true)
+    s.visit("/")
+    # window
+    assert_equal "undefined", s.evaluate_script("typeof window.Vue")
+    assert_equal false, s.evaluate_script("'Vue' in window")
+    # element / navigator / document
+    assert_equal "undefined", s.evaluate_script("typeof document.getElementById('x').nope")
+    assert_equal false, s.evaluate_script("'nope' in document.getElementById('x')")
+    assert_equal "undefined", s.evaluate_script("typeof navigator.bogusApi")
+    assert_equal "undefined", s.evaluate_script("typeof document.bogusProp")
+    # window <-> globalThis sharing still works (set on one, read on the other)
+    s.execute_script("window.__shared = 1")
+    assert_equal 1, s.evaluate_script("globalThis.__shared")
+    s.execute_script("globalThis.__shared2 = 2")
+    assert_equal 2, s.evaluate_script("window.__shared2")
+    # present-but-null stays null (not undefined): an empty element's firstChild
+    assert_equal "object", s.evaluate_script("typeof document.getElementById('x').firstChild")
+    assert_equal true, s.evaluate_script("document.getElementById('x').firstChild === null")
+  ensure
+    s&.dispose_js
+  end
+
+  def test_post_message_delivers_a_message_event_to_self
+    s = Dommy::Rack::Session.new(APP, javascript: true)
+    s.visit("/")
+    s.evaluate_script("globalThis.__pm = ''; addEventListener('message', (e) => { globalThis.__pm = e.data });")
+    s.evaluate_script("postMessage('payload')")
+    s.settle
+    assert_equal "payload", s.evaluate_script("globalThis.__pm")
+  ensure
+    s&.dispose_js
   end
 end
