@@ -58,6 +58,32 @@ class Dommy::Js::TestEsm < Minitest::Test
     end
   end
 
+  # A script-inserted EXTERNAL `<script src>` must load + run ASYNCHRONOUSLY (per
+  # HTML spec) — NOT synchronously during appendChild. Synchronous execution
+  # would run it mid-task and make the engine drain its microtask queue while JS
+  # is still on the stack, re-entering a framework's scheduler (Vue's nextTick
+  # flush) and patching a half-built tree — note.com's RecommendTemplate crashed
+  # Vue's `isPatchable(null)` exactly this way.
+  def test_inserted_external_script_does_not_run_synchronously_during_append
+    res = Dommy::Resources.static("https://app.test/chunk.js" => "window.__chunkRan = true;")
+    html = <<~HTML
+      <html><body><script>
+        window.__chunkRan = false;
+        var s = document.createElement("script");
+        s.src = "https://app.test/chunk.js";
+        document.head.appendChild(s);
+        // Captured synchronously, right after appendChild: the external script
+        // must not have executed yet.
+        window.__ranDuringAppend = window.__chunkRan;
+      </script></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "https://app.test/", resources: res) do |b|
+      assert_equal false, b.evaluate("window.__ranDuringAppend"),
+        "external script is deferred, not executed synchronously inside appendChild"
+      assert_equal true, b.evaluate("window.__chunkRan"), "it still runs (after the task unwinds / on settle)"
+    end
+  end
+
   # The script's load event must fire ASYNCHRONOUSLY — handlers are commonly
   # attached AFTER appendChild (`head.appendChild(s); s.onload = …`), so a
   # synchronous dispatch during appendChild would fire before the handler exists
