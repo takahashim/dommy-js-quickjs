@@ -38,11 +38,40 @@ module Dommy
           # never crash). Genuine host bugs (any other error) still propagate.
           win.scheduler.timer_error_handler = method(:handle_timer_error) if win.respond_to?(:scheduler) && win.scheduler
           @backend.eval(<<~JS)
-            globalThis.setTimeout = (fn, delay) => window.setTimeout(fn, delay);
+            // Remember where each timer was scheduled, so a throwing callback can
+            // be traced back to the code that set it up. This matters most for
+            // minified SPA bundles, where the thrown value is often a bare `null`
+            // with no stack of its own — the only locatable stack is the
+            // scheduling site. The origin Error is kept JS-side and only
+            // stringified if the callback actually throws (see
+            // __rbFetchTimerOrigin + handle_timer_error); a successful callback
+            // forgets its origin and the map is size-capped, so this stays cheap.
+            globalThis.__rbTimerOrigins = new Map();
+            const __rbDefer = (schedule, fn, delay) => {
+              if (typeof fn !== "function") return schedule(fn, delay);
+              const origin = new Error();
+              let id;
+              const wrapped = function () {
+                const result = fn.apply(this, arguments);
+                __rbTimerOrigins.delete(id); // ran cleanly — no need to keep it
+                return result;
+              };
+              id = schedule(wrapped, delay);
+              __rbTimerOrigins.set(id, origin);
+              if (__rbTimerOrigins.size > 4096) __rbTimerOrigins.delete(__rbTimerOrigins.keys().next().value);
+              return id;
+            };
+            globalThis.__rbFetchTimerOrigin = (id) => {
+              const origin = __rbTimerOrigins.get(id);
+              if (!origin) return "";
+              __rbTimerOrigins.delete(id);
+              return origin.stack || "";
+            };
+            globalThis.setTimeout = (fn, delay) => __rbDefer((f, d) => window.setTimeout(f, d), fn, delay);
             globalThis.clearTimeout = (id) => window.clearTimeout(id);
-            globalThis.setInterval = (fn, delay) => window.setInterval(fn, delay);
+            globalThis.setInterval = (fn, delay) => __rbDefer((f, d) => window.setInterval(f, d), fn, delay);
             globalThis.clearInterval = (id) => window.clearInterval(id);
-            globalThis.requestAnimationFrame = (fn) => window.requestAnimationFrame(fn);
+            globalThis.requestAnimationFrame = (fn) => __rbDefer((f) => window.requestAnimationFrame(f), fn);
             globalThis.cancelAnimationFrame = (id) => window.cancelAnimationFrame(id);
             // queueMicrotask must share the engine's promise-job (microtask)
             // queue so its callbacks are FIFO-ordered with Promise reactions
@@ -383,11 +412,41 @@ module Dommy
         # the event loop keeps running). Record it and return truthy so the
         # scheduler drops the timer and browsing continues. A non-JS error is a
         # genuine host bug: return falsy so it propagates.
-        def handle_timer_error(error, _timer)
+        def handle_timer_error(error, timer)
           return false unless error.is_a?(::Quickjs::RuntimeError)
 
-          @callback_error_listener&.call(error)
+          @callback_error_listener&.call(enrich_callback_error(error, timer))
           true
+        end
+
+        # Attach the timer's scheduling stack (where the page set the timer up) to
+        # the recorded error, so a callback that throws a stackless value — a bare
+        # `null`, common in minified bundles — is still traceable to the code that
+        # scheduled it. The error's class (and message, the dedup key) is kept;
+        # only its backtrace is replaced with the JS frames, which the diagnostics
+        # UI reads in place of the host scheduler internals. A no-op when no origin
+        # was captured (a timer not created through the instrumented globals, or a
+        # unit test driving the scheduler directly).
+        def enrich_callback_error(error, timer)
+          frames = fetch_timer_origin(timer)
+          error.set_backtrace(frames) unless frames.empty?
+          error
+        rescue StandardError
+          error
+        end
+
+        # The scheduling stack for `timer`, as cleaned frame strings (or []). The
+        # origin Error lives JS-side until now; fetching it also clears it.
+        def fetch_timer_origin(timer)
+          return [] unless timer.respond_to?(:id)
+
+          stack = @backend.call_js("__rbFetchTimerOrigin", timer.id).to_s
+          # Drop the shim's own frame (the `new Error()` in __rbDefer) so the top
+          # frame is the page code that called setTimeout/setInterval.
+          stack.split("\n").map(&:strip).reject(&:empty?)
+               .reject { |line| line.include?("__rbDefer") }
+        rescue StandardError
+          []
         end
 
         # Alias the bare browser globals frameworks reach for onto the installed

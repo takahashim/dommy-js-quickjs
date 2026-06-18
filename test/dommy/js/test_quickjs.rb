@@ -85,6 +85,40 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     rt&.dispose
   end
 
+  # A timer callback can throw a value with no stack of its own (a bare `null`,
+  # common in minified SPA bundles). The host instruments the timer globals to
+  # remember where each timer was scheduled, and attaches that scheduling stack
+  # to the recorded error's backtrace — so the diagnostics show the page code
+  # responsible, not just the scheduler internals. The error's class/message are
+  # preserved (the message is the dedup key).
+  def test_throwing_timer_error_carries_its_scheduling_stack
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(@win)
+    errors = []
+    rt.on_callback_error { |e| errors << e }
+    # Schedule through the instrumented setTimeout from a named function, so the
+    # captured origin stack has a recognizable frame. The timer stays pending
+    # (we never advance the clock), so its origin is still on file.
+    rt.execute(<<~JS)
+      function scheduleFromHere() { return setTimeout(function () { throw null; }, 1000); }
+      globalThis.__tid = scheduleFromHere();
+    JS
+    timer = Struct.new(:id).new(rt.evaluate("globalThis.__tid"))
+
+    handled = rt.send(:handle_timer_error, ::Quickjs::RuntimeError.new("null", nil), timer)
+
+    assert handled, "the JS timer error is swallowed (not re-raised)"
+    recorded = errors.last
+    assert_instance_of ::Quickjs::RuntimeError, recorded, "the error class is preserved"
+    assert_equal "null", recorded.message, "the message (dedup key) is preserved"
+    assert recorded.backtrace&.any?, "the scheduling stack is attached as the backtrace"
+    assert_includes recorded.backtrace.join("\n"), "scheduleFromHere",
+      "the backtrace points at the code that scheduled the timer"
+    refute_includes recorded.backtrace.join("\n"), "__rbDefer", "the shim frame is stripped"
+  ensure
+    rt&.dispose
+  end
+
   def test_get_attribute_method_call
     assert_equal "title", @rt.evaluate('document.querySelector("h1").getAttribute("class")')
   end
