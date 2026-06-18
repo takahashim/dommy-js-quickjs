@@ -58,6 +58,33 @@ class Dommy::Js::TestEsm < Minitest::Test
     end
   end
 
+  # The script's load event must fire ASYNCHRONOUSLY — handlers are commonly
+  # attached AFTER appendChild (`head.appendChild(s); s.onload = …`), so a
+  # synchronous dispatch during appendChild would fire before the handler exists
+  # and be missed, hanging a loader that awaits onload. (note.com's gtag plugin:
+  # `appendChild(s); s.onload = () => resolve()` — a sync fire hung Nuxt
+  # hydration.)
+  def test_inserted_script_load_event_reaches_a_handler_set_after_append
+    res = Dommy::Resources.static("https://app.test/late.js" => "window.__ran = true;")
+    html = <<~HTML
+      <html><body><script>
+        window.__loaded = new Promise(function (resolve, reject) {
+          var s = document.createElement("script");
+          s.src = "https://app.test/late.js";
+          document.head.appendChild(s);          // inserted FIRST
+          s.onload = function () { resolve("ok"); }; // handler attached AFTER
+          s.onerror = function () { reject("err"); };
+        });
+        window.__loaded.then(function (v) { window.__settled = v; });
+        window.__armed = true;
+      </script></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "https://app.test/", resources: res) do |b|
+      assert_equal true, b.evaluate("window.__ran")
+      assert_equal "ok", b.evaluate("window.__settled"), "onload (set after append) still received the event"
+    end
+  end
+
   def test_inline_module_imports_bare_specifier
     open('<script type="module">import { Application } from "@hotwired/stimulus"; window.__r = Application.start();</script>') do |b|
       assert_equal "STARTED", b.evaluate("window.__r")
