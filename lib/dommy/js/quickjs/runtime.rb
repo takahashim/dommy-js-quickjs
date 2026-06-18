@@ -376,13 +376,15 @@ module Dommy
 
         private
 
-        # Scheduler hook: a timer/rAF callback raised. Swallow only the execution
-        # timeout (a runaway busy loop the gem force-killed) — record it as a
-        # js_error and return truthy so the scheduler drops the timer and browsing
-        # continues. Any other error is a genuine host bug: return falsy so it
-        # propagates.
+        # Scheduler hook: a timer/rAF callback raised. A JS-execution error —
+        # the callback threw (Quickjs::RuntimeError) or was force-killed for
+        # running too long (Quickjs::InterruptedError < RuntimeError) — must not
+        # escape its dispatch (WHATWG: a timer callback's exception is reported,
+        # the event loop keeps running). Record it and return truthy so the
+        # scheduler drops the timer and browsing continues. A non-JS error is a
+        # genuine host bug: return falsy so it propagates.
         def handle_timer_error(error, _timer)
-          return false unless error.is_a?(::Quickjs::InterruptedError)
+          return false unless error.is_a?(::Quickjs::RuntimeError)
 
           @callback_error_listener&.call(error)
           true

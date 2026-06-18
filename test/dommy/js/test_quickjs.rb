@@ -67,6 +67,24 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     rt&.dispose
   end
 
+  # A JS timer callback that throws (a Quickjs::RuntimeError reaching the host —
+  # as it does under some engine/Ruby versions instead of being swallowed in the
+  # VM) must not escape its dispatch: WHATWG says report the exception and keep
+  # the event loop running. Recorded + swallowed, not re-raised (a page's bad
+  # timer must not crash the browser).
+  def test_js_timer_callback_error_is_recorded_not_raised
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(@win)
+    errors = []
+    rt.on_callback_error { |e| errors << e }
+    @win.scheduler.set_timeout(proc { raise ::Quickjs::RuntimeError.new("callback threw", nil) }, 0)
+
+    @win.scheduler.advance_time(0) # must not raise
+    assert(errors.any? { |e| e.message.include?("callback threw") }, "the JS timer error was recorded")
+  ensure
+    rt&.dispose
+  end
+
   def test_get_attribute_method_call
     assert_equal "title", @rt.evaluate('document.querySelector("h1").getAttribute("class")')
   end
