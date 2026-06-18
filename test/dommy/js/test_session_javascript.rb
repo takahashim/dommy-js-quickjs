@@ -141,6 +141,40 @@ class Dommy::Js::TestBareGlobals < Minitest::Test
     s&.dispose_js
   end
 
+  # This QuickJS build ships without ICU; without a polyfill any `Intl.*` use
+  # throws "'Intl' is not defined" (nuxt.com, i18n libs). The polyfill formats
+  # reasonably so pages run.
+  def test_intl_polyfill
+    s = Dommy::Rack::Session.new(APP, javascript: true)
+    s.visit("/")
+    assert_equal "object", s.evaluate_script("typeof Intl")
+    assert_equal "1,234,567.89", s.evaluate_script('new Intl.NumberFormat("en").format(1234567.89)')
+    assert_equal "42%", s.evaluate_script('new Intl.NumberFormat("en",{style:"percent"}).format(0.42)')
+    assert_equal "string", s.evaluate_script('typeof new Intl.DateTimeFormat("en").format(0)')
+    assert_equal "a, b, c", s.evaluate_script('new Intl.ListFormat("en").format(["a","b","c"])')
+    assert_equal "one", s.evaluate_script('new Intl.PluralRules("en").select(1)')
+    assert_equal "-3 days", s.evaluate_script('new Intl.RelativeTimeFormat("en").format(-3,"day")')
+  ensure
+    s&.dispose_js
+  end
+
+  # No WebAssembly in this build; a bare `WebAssembly.foo` reference threw
+  # "'WebAssembly' is not defined". The stub makes it defined (so feature probes
+  # / references don't crash) while compile/instantiate reject and validate()
+  # is false, so WASM-loading code takes its JS fallback.
+  def test_webassembly_stub
+    s = Dommy::Rack::Session.new(APP, javascript: true)
+    s.visit("/")
+    assert_equal "object", s.evaluate_script("typeof WebAssembly")
+    assert_equal false, s.evaluate_script("WebAssembly.validate(new Uint8Array([0]))")
+    assert_equal "function", s.evaluate_script("typeof WebAssembly.instantiate")
+    # Memory honors {shared:true} so WPT's common/sab.js keeps deriving SharedArrayBuffer.
+    assert_equal "SharedArrayBuffer",
+      s.evaluate_script("new WebAssembly.Memory({initial:1,shared:true}).buffer.constructor.name")
+  ensure
+    s&.dispose_js
+  end
+
   # Absent properties read as JS `undefined` with `in` false (not null) across
   # the DOM surface — vue-meta on note.com does `isUndefined(window.Vue) ||
   # install(window.Vue)`; null made it call install(null) and crash.

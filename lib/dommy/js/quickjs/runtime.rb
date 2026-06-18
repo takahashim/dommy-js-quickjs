@@ -219,9 +219,106 @@ module Dommy
         # is what lets real frontend bundles (Turbo, …) run unmodified.
         def install_browser_globals
           alias_browser_globals
+          install_intl_polyfill
+          install_wasm_stub
           mirror_builtins_on_window
           self
         end
+
+        # This QuickJS build has no WebAssembly, so a bare `WebAssembly.foo`
+        # reference throws `'WebAssembly' is not defined` (nuxt.com via Shiki,
+        # many bundlers' feature probes). Define a stub: compile/instantiate
+        # reject and validate() returns false, so WASM-loading code takes its
+        # JS fallback instead of crashing. `Memory` honors `{shared:true}` (a
+        # SharedArrayBuffer) so WPT's common/sab.js keeps working.
+        def install_wasm_stub
+          @backend.eval(WASM_STUB_JS)
+          self
+        end
+
+        WASM_STUB_JS = <<~'JS'
+          if (typeof globalThis.WebAssembly === "undefined") {
+            var unsupported = function () { return Promise.reject(new Error("WebAssembly is not supported")); };
+            var throwUnsupported = function () { throw new Error("WebAssembly is not supported"); };
+            globalThis.WebAssembly = {
+              instantiate: unsupported, instantiateStreaming: unsupported,
+              compile: unsupported, compileStreaming: unsupported,
+              validate: function () { return false; },
+              Module: throwUnsupported, Instance: throwUnsupported,
+              Memory: function (opts) {
+                var bytes = ((opts && opts.initial) || 0) * 65536;
+                this.buffer = (opts && opts.shared && typeof SharedArrayBuffer === "function")
+                  ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+              },
+              Table: function () {}, Global: function () {},
+              CompileError: Error, LinkError: Error, RuntimeError: Error,
+            };
+          }
+        JS
+
+        # This QuickJS build ships without ICU, so `Intl` is undefined and any
+        # page touching `Intl.NumberFormat` / `DateTimeFormat` / … throws
+        # `'Intl' is not defined` (nuxt.com, i18n libraries, …). Install a small
+        # locale-naive polyfill: it formats reasonably (grouped numbers, ISO-ish
+        # dates) so pages run instead of crashing, without pulling in full ICU.
+        def install_intl_polyfill
+          @backend.eval(INTL_POLYFILL_JS)
+          self
+        end
+
+        INTL_POLYFILL_JS = <<~'JS'
+          if (typeof globalThis.Intl === "undefined") {
+            var I = {};
+            var group = function (s) {
+              var p = String(s).split(".");
+              p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+              return p.join(".");
+            };
+            function NumberFormat(l, o) { this.o = o || {}; }
+            NumberFormat.prototype.format = function (n) {
+              n = Number(n); var o = this.o;
+              if (o.style === "percent") n *= 100;
+              var max = o.maximumFractionDigits;
+              if (max == null && o.style === "currency") max = 2;
+              var s = group(max == null ? String(n) : n.toFixed(max));
+              if (o.style === "percent") s += "%";
+              if (o.style === "currency" && o.currency) s = o.currency + " " + s;
+              return s;
+            };
+            NumberFormat.prototype.formatToParts = function (n) { return [{ type: "literal", value: this.format(n) }]; };
+            NumberFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", numberingSystem: "latn", style: "decimal" }, this.o); };
+            function DateTimeFormat(l, o) { this.o = o || {}; }
+            DateTimeFormat.prototype.format = function (d) {
+              d = d == null ? new Date() : new Date(d);
+              if (isNaN(d.getTime())) return "";
+              try { return d.toLocaleString(); } catch (e) { return d.toString(); }
+            };
+            DateTimeFormat.prototype.formatToParts = function (d) { return [{ type: "literal", value: this.format(d) }]; };
+            DateTimeFormat.prototype.formatRange = function (a, b) { return this.format(a) + " – " + this.format(b); };
+            DateTimeFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", calendar: "gregory", numberingSystem: "latn", timeZone: "UTC" }, this.o); };
+            function Collator(l, o) { this.o = o || {}; }
+            Collator.prototype.compare = function (a, b) { a = String(a); b = String(b); return a < b ? -1 : a > b ? 1 : 0; };
+            Collator.prototype.resolvedOptions = function () { return Object.assign({ locale: "en" }, this.o); };
+            function PluralRules(l, o) { this.o = o || {}; }
+            PluralRules.prototype.select = function (n) { return Number(n) === 1 ? "one" : "other"; };
+            PluralRules.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", type: "cardinal" }, this.o); };
+            function RelativeTimeFormat(l, o) { this.o = o || {}; }
+            RelativeTimeFormat.prototype.format = function (v, u) { return v + " " + u + (Math.abs(v) === 1 ? "" : "s"); };
+            RelativeTimeFormat.prototype.formatToParts = function (v, u) { return [{ type: "literal", value: this.format(v, u) }]; };
+            RelativeTimeFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", numeric: "always", style: "long" }, this.o); };
+            function ListFormat(l, o) { this.o = o || {}; }
+            ListFormat.prototype.format = function (a) { return Array.from(a || []).join(", "); };
+            ListFormat.prototype.formatToParts = function (a) { return [{ type: "element", value: this.format(a) }]; };
+            ListFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", type: "conjunction", style: "long" }, this.o); };
+            I.NumberFormat = NumberFormat; I.DateTimeFormat = DateTimeFormat; I.Collator = Collator;
+            I.PluralRules = PluralRules; I.RelativeTimeFormat = RelativeTimeFormat; I.ListFormat = ListFormat;
+            ["NumberFormat", "DateTimeFormat", "Collator", "PluralRules", "RelativeTimeFormat", "ListFormat"].forEach(function (k) {
+              I[k].supportedLocalesOf = function (locs) { return Array.isArray(locs) ? locs.slice() : locs ? [locs] : []; };
+            });
+            I.getCanonicalLocales = function (locs) { return Array.isArray(locs) ? locs.slice() : locs ? [String(locs)] : []; };
+            globalThis.Intl = I;
+          }
+        JS
 
         # WPT-only scaffolding: a minimal `WebAssembly.Memory` whose `.buffer`
         # is a SharedArrayBuffer. The engine ships a real SharedArrayBuffer but
