@@ -115,6 +115,55 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     err = assert_raises(Dommy::Rack::Error) { plain.execute_script("1") }
     assert_includes err.message, "javascript: true"
   end
+
+  # --- Off-thread network: an injected executor defers fetch to a worker ---
+
+  # Captures submitted jobs so a test runs them deterministically; #run_all runs
+  # each on a real worker thread (proving the request leaves the page thread) and
+  # joins before handing the result back, mirroring dommynx's NetworkPool.
+  class ManualExecutor
+    attr_reader :pending
+
+    def initialize = @pending = []
+    def submit(job, &on_result) = (@pending << [job, on_result]) && self
+
+    def run_all
+      @pending.each do |job, on_result|
+        Thread.new { on_result.call(begin; job.call; rescue StandardError; nil; end) }.join
+      end
+      @pending.clear
+    end
+  end
+
+  def test_fetch_runs_off_thread_through_an_injected_executor
+    executor = ManualExecutor.new
+    @session = session(network_executor: executor)
+    @session.visit("/")
+
+    @session.execute_script('fetch("/api/ping").then((r) => r.text()).then((t) => { window.__fetched = t; });')
+
+    # Deferred to the executor, not resolved inline: the promise is still pending.
+    assert_equal "undefined", @session.evaluate_script("typeof window.__fetched")
+    refute_empty executor.pending, "the request was handed to the network executor"
+
+    executor.run_all          # a worker thread performs the request off the page thread
+    @session.advance_time(0)  # the response is applied on the page thread via the inbox
+
+    assert_equal "pong", @session.evaluate_script("window.__fetched")
+  end
+
+  def test_off_thread_fetch_carries_the_session_cookies
+    executor = ManualExecutor.new
+    @session = session(network_executor: executor)
+    @session.visit("/set-cookie") # u=alice into the shared jar
+    @session.visit("/")
+
+    @session.execute_script('fetch("/whoami").then((r) => r.text()).then((t) => { window.__seen = t; });')
+    executor.run_all
+    @session.advance_time(0)
+
+    assert_includes @session.evaluate_script("window.__seen"), "u=alice"
+  end
 end
 
 # Browser globals frameworks read bare (without `window.`) are aliased onto the
