@@ -289,6 +289,20 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     JS
   end
 
+  # Range.createContextualFragment parses an HTML string into a fragment in the
+  # range's context (Nuxt's DOM hydration helper uses it; was "not a function").
+  def test_range_create_contextual_fragment
+    assert_equal "function", @rt.evaluate("typeof document.createRange().createContextualFragment")
+    assert_equal 2, @rt.evaluate(<<~JS)
+      (() => { const r = document.createRange(); r.selectNode(document.querySelector("h1"));
+               return r.createContextualFragment("<i>a</i><b>b</b>").childNodes.length; })()
+    JS
+    assert_equal "I", @rt.evaluate(<<~JS)
+      (() => { const r = document.createRange(); r.selectNode(document.querySelector("h1"));
+               return r.createContextualFragment("<i>a</i>").firstChild.tagName; })()
+    JS
+  end
+
   # Bridge sub-objects get their WebIDL interface names too.
   def test_classlist_interface_name
     assert_equal "DOMTokenList",

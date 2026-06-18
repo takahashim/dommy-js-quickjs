@@ -35,6 +35,29 @@ class Dommy::Js::TestEsm < Minitest::Test
     Dommy::Browser.open(html, url: "https://app.test/", resources: ESM.call) { |b| yield b }
   end
 
+  # A `<script src>` inserted into the DOM after load (how webpack/Vite load
+  # on-demand chunks) must be fetched + executed, and its load event must fire
+  # so the loader's promise settles. Previously only inline inserted scripts ran
+  # — external ones were silently dropped, hanging code-split SPA bootstraps.
+  def test_dynamically_inserted_external_script_runs_and_fires_load
+    res = Dommy::Resources.static(
+      "https://app.test/chunk.js" => "window.__chunkRan = true; if (window.__onChunk) window.__onChunk();"
+    )
+    html = <<~HTML
+      <html><body><script>
+        window.__chunkRan = false;
+        var s = document.createElement("script");
+        s.src = "https://app.test/chunk.js";
+        s.onload = function () { window.__onloadFired = true; };
+        document.head.appendChild(s);
+      </script></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "https://app.test/", resources: res) do |b|
+      assert_equal true, b.evaluate("window.__chunkRan"), "inserted external script executed"
+      assert_equal true, b.evaluate("window.__onloadFired"), "its load event fired"
+    end
+  end
+
   def test_inline_module_imports_bare_specifier
     open('<script type="module">import { Application } from "@hotwired/stimulus"; window.__r = Application.start();</script>') do |b|
       assert_equal "STARTED", b.evaluate("window.__r")

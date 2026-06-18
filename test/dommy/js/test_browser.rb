@@ -67,6 +67,37 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # `window.Promise` must be the engine's native Promise (=== globalThis.Promise),
+  # like a real browser — not the host's Ruby-backed PromiseConstructor. If the
+  # host one leaked onto the window, feature detection (core-js et al.) would see
+  # a non-conforming Promise and install a polyfill whose microtasks the host
+  # can't flush, silently stalling `await` and hanging SPA hydration.
+  def test_window_promise_is_the_native_promise
+    Dommy::Browser.open("<html><body></body></html>", url: "http://x.test/") do |b|
+      assert_equal true, b.evaluate("window.Promise === globalThis.Promise")
+      assert_equal true, b.evaluate("/native code/.test(String(window.Promise))"), "not the host proxy"
+      assert_equal true, b.evaluate("window.Promise[Symbol.species] === window.Promise")
+      assert_equal "function", b.evaluate("typeof window.Promise.prototype.then")
+      assert_equal 42, b.evaluate("(async () => await window.Promise.resolve(42))()"), "resolves as a real microtask"
+    end
+  end
+
+  # `PromiseRejectionEvent` must exist as a global constructor: Promise
+  # feature-detection (core-js et al.) checks for it, and without it swaps in a
+  # polyfill whose microtask queue the host can't flush — which silently starves
+  # every `.then`/await and hangs SPA hydration (note.com rendered only a shell).
+  def test_promise_rejection_event_exists
+    Dommy::Browser.open("<html><body></body></html>", url: "http://x.test/") do |b|
+      assert_equal "function", b.evaluate("typeof PromiseRejectionEvent")
+      assert_equal "function", b.evaluate("typeof window.PromiseRejectionEvent")
+      assert_equal true, b.evaluate("new PromiseRejectionEvent('unhandledrejection', { reason: 'boom' }) instanceof Event")
+      assert_equal "boom", b.evaluate("new PromiseRejectionEvent('unhandledrejection', { reason: 'boom' }).reason")
+      assert_equal "unhandledrejection", b.evaluate("new PromiseRejectionEvent('unhandledrejection', {}).type")
+      # the payoff: the engine's native Promise stays the global Promise (no polyfill bait)
+      assert_equal true, b.evaluate("(async () => {})().constructor === globalThis.Promise")
+    end
+  end
+
   def test_current_script_is_set_during_execution
     Dommy::Browser.open(PAGE, url: "http://example.test/", resources: resources) do |b|
       # The inline script saw a non-null currentScript (its own element; no id → "").
