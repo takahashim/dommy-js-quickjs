@@ -98,6 +98,24 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # A srcless ("blank") <iframe> inserted into the DOM must fire `load`
+  # asynchronously (handler commonly attached after appendChild), like a real
+  # browser. Libraries await it — FingerprintJS's withIframe (font sources) does,
+  # and a never-firing load hung note.com's tracking plugin / Nuxt hydration.
+  def test_blank_iframe_fires_load_event
+    html = <<~HTML
+      <html><body><script>
+        window.__iframeLoaded = false;
+        var f = document.createElement("iframe");
+        document.body.appendChild(f);          // inserted first
+        f.onload = function () { window.__iframeLoaded = true; }; // handler after
+      </script></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "http://x.test/") do |b|
+      assert_equal true, b.evaluate("window.__iframeLoaded"), "blank iframe fired load"
+    end
+  end
+
   def test_current_script_is_set_during_execution
     Dommy::Browser.open(PAGE, url: "http://example.test/", resources: resources) do |b|
       # The inline script saw a non-null currentScript (its own element; no id → "").
