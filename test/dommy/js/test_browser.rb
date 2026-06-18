@@ -98,21 +98,35 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
-  # A srcless ("blank") <iframe> inserted into the DOM must fire `load`
-  # asynchronously (handler commonly attached after appendChild), like a real
-  # browser. Libraries await it — FingerprintJS's withIframe (font sources) does,
-  # and a never-firing load hung note.com's tracking plugin / Nuxt hydration.
-  def test_blank_iframe_fires_load_event
+  # A blank <iframe> (no src or src="about:blank") inserted into the DOM gets a
+  # real, complete nested document and fires `load` asynchronously (handler
+  # commonly attached after appendChild), like a real browser. FingerprintJS's
+  # withIframe (its font sources) appends to `iframe.contentWindow.document.body`
+  # and polls its readyState — a never-firing load + null contentWindow hung
+  # note.com's tracking plugin and its whole Nuxt hydration.
+  def test_blank_iframe_fires_load_and_has_a_usable_content_document
     html = <<~HTML
       <html><body><script>
-        window.__iframeLoaded = false;
+        window.__loaded = false;
         var f = document.createElement("iframe");
+        f.src = "about:blank";
         document.body.appendChild(f);          // inserted first
-        f.onload = function () { window.__iframeLoaded = true; }; // handler after
+        f.onload = function () { window.__loaded = true; }; // handler after
       </script></body></html>
     HTML
     Dommy::Browser.open(html, url: "http://x.test/") do |b|
-      assert_equal true, b.evaluate("window.__iframeLoaded"), "blank iframe fired load"
+      f = 'document.querySelector("iframe")'
+      assert_equal true, b.evaluate("window.__loaded"), "blank iframe fired load"
+      assert_equal true, b.evaluate("!!#{f}.contentWindow"), "contentWindow is a real window (not null)"
+      assert_equal "complete", b.evaluate("#{f}.contentWindow.document.readyState")
+      # FingerprintJS-style: append + measure inside the iframe document
+      assert_equal 1, b.evaluate(<<~JS)
+        (function () {
+          var d = #{f}.contentWindow.document;
+          d.body.appendChild(d.createElement("span"));
+          return d.body.childNodes.length;
+        })()
+      JS
     end
   end
 
