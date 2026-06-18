@@ -31,6 +31,42 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal "Click me", @rt.evaluate('document.querySelector(".primary").textContent')
   end
 
+  # A runaway timer callback (infinite busy loop) is force-killed by the engine's
+  # execution timeout. install_window wires the scheduler's error hook so the
+  # interrupt is recorded via on_callback_error and the timer dropped — it must
+  # NOT propagate as a fatal crash. (lp-note hit this: a navigation's settle ran
+  # a looping timer and the bare timeout exception crashed dommynx.)
+  def test_runaway_timer_callback_is_recorded_not_fatal
+    rt = Dommy::Js::Quickjs::Runtime.new(timeout_msec: 800) # short budget: kill fast
+    errors = []
+    rt.on_callback_error { |e| errors << e }
+    rt.define_host_object("document", @win.document)
+    rt.install_window(@win)
+    rt.execute('window.__alive = true; setTimeout(function () { while (true) { Math.sqrt(2); } }, 0);')
+    rt.settle # runs the runaway timer; interrupt is swallowed, not raised
+    assert(errors.any? { |e| e.is_a?(::Quickjs::InterruptedError) },
+      "the timeout interrupt is recorded as a callback error")
+    assert_equal true, rt.evaluate("window.__alive"), "the realm survives the interrupt"
+    # The timer was dropped: a second settle returns promptly (no 800ms re-stall).
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    rt.settle
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.4,
+      "the runaway timer was dropped, so settle does not re-stall"
+  ensure
+    rt&.dispose
+  end
+
+  # Only the execution-timeout interrupt is swallowed. A genuine (non-interrupt)
+  # error raised by a timer callback still propagates, so real host bugs surface.
+  def test_non_timeout_timer_error_still_propagates
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(@win)
+    @win.scheduler.set_timeout(proc { raise "host bug" }, 0)
+    assert_raises(RuntimeError) { @win.scheduler.advance_time(0) }
+  ensure
+    rt&.dispose
+  end
+
   def test_get_attribute_method_call
     assert_equal "title", @rt.evaluate('document.querySelector("h1").getAttribute("class")')
   end

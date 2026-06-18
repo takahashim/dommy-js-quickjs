@@ -15,6 +15,7 @@ module Dommy
         def initialize(**vm_opts)
           @backend = Backend.new(**vm_opts)
           @bridge = Dommy::Js::HostBridge.new(@backend)
+          @callback_error_listener = nil
         end
 
         def define_host_object(name, obj)
@@ -30,6 +31,12 @@ module Dommy
           @window = win
           define_host_object("window", win)
           @bridge.window = win
+          # A runaway timer/rAF callback (busy loop) is force-killed by the gem's
+          # eval timeout, surfacing as a Quickjs::InterruptedError out of the host
+          # call. Route it through the scheduler's error hook so it is recorded as
+          # a js_error and dropped, not propagated as a fatal crash (browsing must
+          # never crash). Genuine host bugs (any other error) still propagate.
+          win.scheduler.timer_error_handler = method(:handle_timer_error) if win.respond_to?(:scheduler) && win.scheduler
           @backend.eval(<<~JS)
             globalThis.setTimeout = (fn, delay) => window.setTimeout(fn, delay);
             globalThis.clearTimeout = (id) => window.clearTimeout(id);
@@ -207,6 +214,15 @@ module Dommy
           self
         end
 
+        # Observe a timer/rAF callback that was force-killed by the execution
+        # timeout (a runaway busy loop). The host records it as a js_error; the
+        # offending timer is already dropped by the scheduler so it cannot
+        # re-stall. Optional in the Runtime contract (guard with respond_to?).
+        def on_callback_error(&block)
+          @callback_error_listener = block
+          self
+        end
+
         # Observe console.* output (see Backend).
         def on_log(&block)
           @backend.on_log(&block)
@@ -359,6 +375,18 @@ module Dommy
         end
 
         private
+
+        # Scheduler hook: a timer/rAF callback raised. Swallow only the execution
+        # timeout (a runaway busy loop the gem force-killed) — record it as a
+        # js_error and return truthy so the scheduler drops the timer and browsing
+        # continues. Any other error is a genuine host bug: return falsy so it
+        # propagates.
+        def handle_timer_error(error, _timer)
+          return false unless error.is_a?(::Quickjs::InterruptedError)
+
+          @callback_error_listener&.call(error)
+          true
+        end
 
         # Alias the bare browser globals frameworks reach for onto the installed
         # window (self/parent/top/location/history/navigator/storages/CSS/fetch/
