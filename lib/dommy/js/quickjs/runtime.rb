@@ -36,7 +36,14 @@ module Dommy
           # call. Route it through the scheduler's error hook so it is recorded as
           # a js_error and dropped, not propagated as a fatal crash (browsing must
           # never crash). Genuine host bugs (any other error) still propagate.
-          win.scheduler.timer_error_handler = method(:handle_timer_error) if win.respond_to?(:scheduler) && win.scheduler
+          if win.respond_to?(:scheduler) && win.scheduler
+            win.scheduler.timer_error_handler = method(:handle_timer_error)
+            # The other half of a WHATWG microtask checkpoint: the engine's
+            # promise-job queue. Wiring this lets the scheduler drain microtasks
+            # after EACH task (not once per batch of due timers), as the event
+            # loop processing model requires.
+            win.scheduler.microtask_checkpoint = method(:drain_microtasks)
+          end
           @backend.eval(<<~JS)
             // Remember where each timer was scheduled, so a throwing callback can
             // be traced back to the code that set it up. This matters most for
