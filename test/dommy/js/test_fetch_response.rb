@@ -284,6 +284,24 @@ class Dommy::Js::TestFetchResponse < Minitest::Test
     assert_equal [true, true, "hello", false, true], result
   end
 
+  # WHATWG: a ReadableStream is async-iterable, so `for await (const chunk of
+  # response.body)` yields the body bytes. Libraries that stream a fetch body
+  # (Apollo Client's multipart/incremental reader) rely on this; without it the
+  # stream looks immediately-done and the read produces nothing.
+  def test_body_is_async_iterable
+    result = @rt.evaluate(<<~JS)
+      (async () => {
+        const r = new Response("hello world");
+        const isIter = typeof r.body[Symbol.asyncIterator] === "function";
+        let text = "";
+        const dec = new TextDecoder();
+        for await (const chunk of r.body) text += dec.decode(chunk);
+        return [isIter, text];
+      })()
+    JS
+    assert_equal [true, "hello world"], result
+  end
+
   # A null-body response (204) has a null body.
   def test_null_body_is_null
     assert_equal true, @rt.evaluate("new Response(null, { status: 204 }).body === null")
