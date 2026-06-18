@@ -82,6 +82,22 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # `window.X` for JS builtins must BE the engine's native global (like a real
+  # browser: `window.console === console`). The host's __js_get__ returned
+  # sentinels for console/Object/Array/JSON that crossed as STRINGS, so e.g.
+  # `x in window.console` threw "invalid 'in' operand" (note.com's console
+  # wrapper hit this).
+  def test_window_js_builtins_are_the_native_globals
+    Dommy::Browser.open("<html><body></body></html>", url: "http://x.test/") do |b|
+      %w[console Object Array JSON Math Date RegExp Map Set].each do |g|
+        assert_equal true, b.evaluate("window.#{g} === globalThis.#{g}"), "window.#{g} is the native #{g}"
+      end
+      assert_equal "object", b.evaluate("typeof window.console")
+      assert_equal true, b.evaluate('"log" in window.console'), "in-operator works on window.console"
+      assert_equal "function", b.evaluate("typeof window.console.log")
+    end
+  end
+
   # `PromiseRejectionEvent` must exist as a global constructor: Promise
   # feature-detection (core-js et al.) checks for it, and without it swaps in a
   # polyfill whose microtask queue the host can't flush — which silently starves
