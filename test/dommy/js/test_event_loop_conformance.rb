@@ -56,9 +56,6 @@ class Dommy::Js::TestEventLoopConformance < Minitest::Test
   # did) collapses this, running fetch's reaction among the script's microtasks
   # — exactly the event-loop collapse that breaks Apollo/RxJS link chains (#95).
   def test_fetch_resolves_in_a_later_task_not_among_script_microtasks
-    skip "fetch-as-task is a staged follow-up: deferring the synchronous fetch " \
-         "resolution onto the scheduler destabilizes the Capybara adapter's " \
-         "settle loop, so it lands separately. This pins the remaining gap."
     @win.__js_set__("__fetchy_stub__",
       { "https://g/q" => { "status" => 200, "body" => "ok", "contentType" => "text/plain" } })
     @rt.execute(<<~JS)

@@ -162,9 +162,41 @@ module Dommy
         # attempt runs nothing. The result is awaited, so a Promise resolves
         # before returning.
         def evaluate(js)
-          @bridge.decode(eval_tagged("await (#{js.strip.sub(/;\s*\z/, "")})"))
+          evaluate_settled("(#{js.strip.sub(/;\s*\z/, "")})")
         rescue ::Quickjs::SyntaxError
-          @bridge.decode(eval_tagged("await (async () => {\n#{js}\n})()"))
+          evaluate_settled("(async () => {\n#{js}\n})()")
+        end
+
+        # Evaluate `expr` to its awaited value, driving the event loop so a result
+        # that depends on a TASK (a fetch's setTimeout(0) delivery, a setTimeout)
+        # settles first. The gem's top-level await (js_std_await) only drains the
+        # engine's job queue, never Dommy's scheduler — so awaiting a task-resolved
+        # promise directly deadlocks in C. Instead: store the result, run the
+        # event loop over everything due NOW (microtask checkpoint + due tasks and
+        # the tasks they chain), then await the now-settled promise (which returns
+        # immediately and still surfaces a rejection as a Ruby raise, as before).
+        def evaluate_settled(expr)
+          # `void 0` keeps the completion value off the promise, so the eval
+          # doesn't trip the gem's "unawaited Promise at top-level" guard.
+          @backend.eval("globalThis.__rbEvalP = Promise.resolve(#{expr}); void 0;")
+          drive_due_now
+          @bridge.decode(eval_tagged("await globalThis.__rbEvalP"))
+        end
+
+        # Run the event loop over the work ready at the current virtual time —
+        # the microtask checkpoint plus every due task and anything it queues at
+        # the same instant — WITHOUT advancing the clock to a future timer (a
+        # result waiting on a real delay is left for the await to surface). The
+        # nested-timer 4ms clamp guarantees due-now work drains in finite turns.
+        def drive_due_now
+          sched = @window&.scheduler
+          return drain_microtasks unless sched
+
+          64.times do
+            sched.advance_time(0)
+            break unless sched.next_due_timer_at == sched.now_ms
+          end
+          nil
         end
 
         def drain_microtasks
