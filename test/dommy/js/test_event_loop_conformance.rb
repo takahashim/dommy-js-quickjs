@@ -47,4 +47,54 @@ class Dommy::Js::TestEventLoopConformance < Minitest::Test
     assert_equal "task1,microtask,task2", order,
       "a microtask checkpoint must run after task1 and before task2 (HTML event loop §8.1.7.3)"
   end
+
+  # A fetch response is delivered by a *task* (the networking task source), not
+  # inline during the fetch() call. So the synchronous script's own microtasks
+  # (queueMicrotask / a settled Promise's reaction) must all run — at the
+  # microtask checkpoint after the current task — BEFORE fetch's reaction, which
+  # waits for a later task. Resolving fetch inline (as Dommy's synchronous path
+  # did) collapses this, running fetch's reaction among the script's microtasks
+  # — exactly the event-loop collapse that breaks Apollo/RxJS link chains (#95).
+  def test_fetch_resolves_in_a_later_task_not_among_script_microtasks
+    skip "fetch-as-task is a staged follow-up: deferring the synchronous fetch " \
+         "resolution onto the scheduler destabilizes the Capybara adapter's " \
+         "settle loop, so it lands separately. This pins the remaining gap."
+    @win.__js_set__("__fetchy_stub__",
+      { "https://g/q" => { "status" => 200, "body" => "ok", "contentType" => "text/plain" } })
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      fetch("https://g/q").then(() => { ORDER.push("fetch"); });
+      queueMicrotask(() => { ORDER.push("microtask"); });
+      Promise.resolve().then(() => { ORDER.push("promise"); });
+    JS
+    @rt.run_until_idle
+
+    assert_equal "microtask,promise,fetch", order,
+      "fetch resolves in a later task, after the script's microtask checkpoint"
+  end
+
+  # HTML timer initialization steps: a timer nested deeper than 5 with a sub-4ms
+  # timeout is clamped to 4ms. Besides matching browsers, this is what keeps a
+  # self-rescheduling setTimeout(0) from spinning forever at the same instant —
+  # it advances into a future frame instead. Here: a chain of setTimeout(0) that
+  # records the virtual time at each step must show the clock jump to >=4ms once
+  # nesting passes 5 (steps 1..5 at t=0, step 6 onward clamped).
+  def test_nested_setTimeout0_is_clamped_to_4ms_after_5_levels
+    @rt.execute(<<~JS)
+      globalThis.TIMES = [];
+      function step() {
+        TIMES.push(performance.now());
+        if (TIMES.length < 8) setTimeout(step, 0);
+      }
+      setTimeout(step, 0);
+    JS
+    @rt.run_until_idle
+
+    times = @rt.evaluate("globalThis.TIMES")
+    assert_equal 8, times.length
+    # The first several nested setTimeout(0) fire at the same instant; once past
+    # the nesting threshold the clamp pushes each ~4ms later, so time advances.
+    assert_equal 0, times.first, "the first timer fires at t=0"
+    assert_operator times.last, :>=, 4, "deep nesting is clamped, so the clock advanced"
+  end
 end
