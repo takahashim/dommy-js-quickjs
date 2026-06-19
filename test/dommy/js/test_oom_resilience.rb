@@ -28,4 +28,22 @@ class Dommy::Js::TestOomResilience < Minitest::Test
     assert_nil backend.eval("1 + 1")
     assert_nil backend.call_js("Math.max", 1, 2)
   end
+
+  # The per-eval timeout is the ceiling on how long QuickJS holds the thread in C
+  # (blocking a deferred Ctrl-C). An interactive host lowers it via the env var;
+  # the library default is unchanged when unset.
+  def test_eval_timeout_honors_the_env_override
+    original = ENV["DOMMY_JS_TIMEOUT_MSEC"]
+
+    ENV.delete("DOMMY_JS_TIMEOUT_MSEC")
+    assert_equal Backend::DEFAULT_TIMEOUT_MSEC, Backend.default_timeout_msec
+
+    ENV["DOMMY_JS_TIMEOUT_MSEC"] = "15000"
+    assert_equal 15_000, Backend.default_timeout_msec
+
+    ENV["DOMMY_JS_TIMEOUT_MSEC"] = "0" # ignore a junk/zero value, keep the default
+    assert_equal Backend::DEFAULT_TIMEOUT_MSEC, Backend.default_timeout_msec
+  ensure
+    ENV["DOMMY_JS_TIMEOUT_MSEC"] = original
+  end
 end
