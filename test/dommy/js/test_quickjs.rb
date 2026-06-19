@@ -31,6 +31,30 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal "Click me", @rt.evaluate('document.querySelector(".primary").textContent')
   end
 
+  def test_bridge_crossing_counts_when_profile_enabled
+    original = ENV["DOMMY_JS_BRIDGE_PROFILE"]
+    ENV["DOMMY_JS_BRIDGE_PROFILE"] = "1"
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.define_host_object("document", @win.document)
+
+    assert_equal "BUTTON", rt.evaluate('document.querySelector(".primary").tagName')
+
+    counts = rt.bridge_crossing_counts
+    assert_operator counts.dig("__rb_host_describe", "__total__"), :>=, 1
+    assert_operator counts.dig("__rb_host_call", "Document#querySelector"), :>=, 1
+    assert_operator counts.dig("__rb_host_get", "HTMLButtonElement#tagName"), :>=, 1
+
+    rt.reset_bridge_crossing_counts
+    assert_equal({}, rt.bridge_crossing_counts.fetch("__rb_host_get", {}))
+  ensure
+    rt&.dispose
+    if original.nil?
+      ENV.delete("DOMMY_JS_BRIDGE_PROFILE")
+    else
+      ENV["DOMMY_JS_BRIDGE_PROFILE"] = original
+    end
+  end
+
   # A runaway timer callback (infinite busy loop) is force-killed by the engine's
   # execution timeout. install_window wires the scheduler's error hook so the
   # interrupt is recorded via on_callback_error and the timer dropped — it must

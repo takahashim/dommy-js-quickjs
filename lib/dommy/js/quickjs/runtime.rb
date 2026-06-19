@@ -17,6 +17,14 @@ module Dommy
           @bridge = Dommy::Js::HostBridge.new(@backend)
           @callback_error_listener = nil
           @js_halted = false
+          # Opt-in diagnostics: the engine stringifies a non-Error rejection reason
+          # to "[object Object]". Install a JS-side recorder so on_unhandled_rejection
+          # can surface the real cause (DOMMY_JS_DEBUG_REJECTIONS=1).
+          @track_rejections = !ENV["DOMMY_JS_DEBUG_REJECTIONS"].to_s.empty?
+          # Install the JS-side Promise rejection recorder (HostBridge registers
+          # the __rb_record_rejection_detail sink it pushes to). The detail then
+          # backfills the engine's detail-less report in #enrich_rejection.
+          @backend.call_js("__rbHost.installRejectionTracker") if @track_rejections
         end
 
         def define_host_object(name, obj)
@@ -287,8 +295,29 @@ module Dommy
 
         # Surface otherwise-swallowed JS promise rejections (see Backend).
         def on_unhandled_rejection(&block)
-          @backend.on_unhandled_rejection(&block)
+          if @track_rejections
+            @backend.on_unhandled_rejection { |err| block.call(enrich_rejection(err)) }
+          else
+            @backend.on_unhandled_rejection(&block)
+          end
           self
+        end
+
+        # In rejection-debug mode, replace the engine's detail-less "[object
+        # Object]" message (a non-Error reason the engine could only toString)
+        # with the rich detail recorded JS-side at rejection time, paired by
+        # recency. A no-op for errors that already carry a real message.
+        def enrich_rejection(err)
+          return err unless err.respond_to?(:message) && err.message.to_s.strip == "[object Object]"
+
+          detail = @bridge.take_rejection_detail
+          return err if detail.nil? || detail.to_s.empty?
+
+          enriched = ::Quickjs::RuntimeError.new(detail.to_s, "UnhandledRejection")
+          enriched.set_backtrace(err.backtrace) if err.backtrace
+          enriched
+        rescue StandardError
+          err
         end
 
         # Observe a timer/rAF callback that was force-killed by the execution
@@ -445,6 +474,16 @@ module Dommy
         # Live handle count (introspection for lifetime tests).
         def registered_count
           @bridge.registered_count
+        end
+
+        # Snapshot bridge crossing counts when DOMMY_JS_BRIDGE_PROFILE=1.
+        def bridge_crossing_counts(limit: nil)
+          @bridge.crossing_counts(limit: limit)
+        end
+
+        def reset_bridge_crossing_counts
+          @bridge.reset_crossing_counts
+          self
         end
 
         def dispose
