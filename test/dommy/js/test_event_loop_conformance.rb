@@ -115,4 +115,120 @@ class Dommy::Js::TestEventLoopConformance < Minitest::Test
     assert_equal "microtask,promise,message", order,
       "MessagePort.postMessage delivers via a task, after the microtask checkpoint"
   end
+
+  # --- "update the rendering": requestAnimationFrame ----------------------
+
+  # The animation-frame callbacks of one rendering update run consecutively, and
+  # a SINGLE microtask checkpoint runs after the whole batch — a microtask queued
+  # by rAF #1 must NOT run before rAF #2 in the same frame (unlike ordinary
+  # tasks, which checkpoint after each).
+  def test_multiple_raf_in_one_frame_share_one_microtask_checkpoint
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      requestAnimationFrame(() => { ORDER.push("raf1"); queueMicrotask(() => ORDER.push("micro")); });
+      requestAnimationFrame(() => { ORDER.push("raf2"); });
+    JS
+    @rt.run_until_idle
+
+    assert_equal "raf1,raf2,micro", order,
+      "both rAFs run, then one checkpoint (the microtask after rAF1 waits for rAF2)"
+  end
+
+  # A rAF registered from within a rAF callback runs in the NEXT rendering
+  # opportunity, not the current one — otherwise an animation loop would spin
+  # within a single frame. Each frame's timestamp is a distinct, advancing value.
+  def test_raf_scheduled_within_raf_runs_in_the_next_frame
+    @rt.execute(<<~JS)
+      globalThis.FRAMES = [];
+      let n = 0;
+      function frame(ts) { FRAMES.push(ts); if (++n < 3) requestAnimationFrame(frame); }
+      requestAnimationFrame(frame);
+    JS
+    @rt.run_until_idle
+
+    frames = @rt.evaluate("globalThis.FRAMES")
+    assert_equal 3, frames.length
+    assert_equal frames.sort.uniq, frames, "each rAF ran in a separate, later frame (distinct, increasing ts)"
+    assert_operator frames[1], :>, frames[0]
+  end
+
+  # All animation-frame callbacks in one rendering update receive the SAME
+  # timestamp (the frame's time), per the processing model.
+  def test_raf_callbacks_in_one_frame_share_a_timestamp
+    @rt.execute(<<~JS)
+      globalThis.TS = [];
+      requestAnimationFrame((ts) => TS.push(ts));
+      requestAnimationFrame((ts) => TS.push(ts));
+    JS
+    @rt.run_until_idle
+
+    ts = @rt.evaluate("globalThis.TS")
+    assert_equal 2, ts.length
+    assert_equal ts[0], ts[1], "rAFs in the same frame share one timestamp"
+  end
+
+  # --- queueMicrotask: the single microtask queue ------------------------
+
+  # queueMicrotask and Promise reactions share ONE FIFO microtask queue, so they
+  # interleave in registration order.
+  def test_queue_microtask_and_promises_share_one_fifo_queue
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      queueMicrotask(() => ORDER.push("qmt1"));
+      Promise.resolve().then(() => ORDER.push("promise"));
+      queueMicrotask(() => ORDER.push("qmt2"));
+    JS
+    @rt.run_until_idle
+
+    assert_equal "qmt1,promise,qmt2", order, "one FIFO microtask queue across sources"
+  end
+
+  # A microtask queued DURING the checkpoint runs in the same checkpoint (the
+  # checkpoint drains until empty), after the already-queued ones.
+  def test_microtask_queued_during_checkpoint_runs_in_same_checkpoint
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      queueMicrotask(() => { ORDER.push("a"); queueMicrotask(() => ORDER.push("nested")); });
+      queueMicrotask(() => ORDER.push("b"));
+    JS
+    @rt.run_until_idle
+
+    assert_equal "a,b,nested", order, "the checkpoint drains newly-queued microtasks too"
+  end
+
+  # A throwing microtask is reported but does NOT stop the queue — later
+  # microtasks still run.
+  def test_throwing_microtask_does_not_stop_the_queue
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      queueMicrotask(() => { ORDER.push("a"); throw new Error("boom"); });
+      queueMicrotask(() => { ORDER.push("b"); });
+    JS
+    @rt.run_until_idle
+
+    assert_equal "a,b", order, "a throwing microtask is isolated; the queue keeps draining"
+  end
+
+  # --- MutationObserver: delivered at the microtask checkpoint ------------
+
+  # MutationObserver records are delivered by a microtask (at the checkpoint
+  # after the current task), and several mutations batch into ONE callback.
+  def test_mutation_observer_delivers_batched_records_as_a_microtask
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      const doc = window.document;
+      const mo = new MutationObserver((records) => { ORDER.push("mo:" + records.length); });
+      mo.observe(doc.body, { childList: true });
+      doc.body.appendChild(doc.createElement("div"));
+      doc.body.appendChild(doc.createElement("span"));
+      queueMicrotask(() => ORDER.push("microtask"));
+      ORDER.push("sync-end");
+    JS
+    @rt.run_until_idle
+
+    # Both mutations batch into one delivery (records.length == 2); the MO
+    # microtask was queued (first mutation) before the queueMicrotask, so it runs
+    # first; both run after the synchronous script.
+    assert_equal "sync-end,mo:2,microtask", order
+  end
 end
