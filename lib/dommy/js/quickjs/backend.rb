@@ -3,6 +3,26 @@
 require "quickjs"
 require_relative "source_guard"
 
+# Performance: the quickjs gem wraps EVERY host-function call — every JS->Ruby
+# DOM crossing (__rb_host_get / _call / _set, …) — in `Timeout.timeout` to bound
+# a runaway Ruby callback. That costs ~4us per crossing (≈40% of a DOM property
+# read: 9.8us -> 5.1us with it removed), and a DOM-heavy SPA (React/Apollo) makes
+# MILLIONS of crossings while hydrating — tens of seconds of pure Timeout
+# overhead, the dominant cost behind a slow page.
+#
+# It is redundant here: QuickJS's own C interrupt handler still force-aborts a
+# runaway JS execution at the eval timeout (that mechanism is independent of this
+# Ruby wrapper), and Dommy's host functions are bounded DOM operations that never
+# hang. So skip the per-crossing Ruby Timeout. Set DOMMY_JS_CROSSING_TIMEOUT=1 to
+# keep the gem's original behavior (re-enabling the Ruby-callback-hang guard).
+if ::Quickjs.respond_to?(:_with_timeout) && ENV["DOMMY_JS_CROSSING_TIMEOUT"].to_s.empty?
+  module Quickjs
+    def self._with_timeout(_msec, proc, args)
+      proc.call(*args)
+    end
+  end
+end
+
 module Dommy
   module Js
     module Quickjs
