@@ -22,12 +22,31 @@ module Dommy
         # synchronous bridge loops (every property crossing is a Ruby call).
         DEFAULT_TIMEOUT_MSEC = 60_000
 
+        # The gem's default memory ceiling is 128 MB. A real-site SPA (note.com's
+        # Apollo/React bundle, hydration, the whole DOM mirrored as host proxies)
+        # blows past that and the VM hits out-of-memory, which poisons it. Give a
+        # browser-grade VM more headroom so heavy pages actually finish rendering;
+        # the OOM is also now survivable (see #poisoned?), not a crash.
+        DEFAULT_MEMORY_LIMIT = 512 * 1024 * 1024
+
         def initialize(**vm_opts)
-          vm_opts = {timeout_msec: DEFAULT_TIMEOUT_MSEC}.merge(vm_opts)
+          vm_opts = {timeout_msec: DEFAULT_TIMEOUT_MSEC, memory_limit: DEFAULT_MEMORY_LIMIT}.merge(vm_opts)
           @vm = ::Quickjs::VM.new(**vm_opts)
         end
 
+        # True once the VM can no longer run JS safely: it hit out-of-memory (the
+        # gem flags it "poisoned" — further eval may segfault) or was disposed.
+        # Callers stop driving a poisoned VM (the page's JS is dead) instead of
+        # letting the error crash the whole browser — browsing survives a page
+        # whose JS ran out of memory, showing whatever rendered before it died.
+        def poisoned?
+          (@vm.respond_to?(:memory_poisoned?) && @vm.memory_poisoned?) ||
+            (@vm.respond_to?(:disposed?) && @vm.disposed?)
+        end
+
         def eval(js)
+          return if poisoned?
+
           @vm.eval_code(js, async: false)
         rescue ::Quickjs::RuntimeError => e
           # A QuickJS codegen bug rejects `for-of` with a `yield` in the iterable
@@ -113,10 +132,14 @@ module Dommy
         end
 
         def call_js(path, *args)
+          return if poisoned?
+
           @vm.call(path, *args)
         end
 
         def drain_microtasks
+          return if poisoned?
+
           @vm.drain_jobs!
         end
 

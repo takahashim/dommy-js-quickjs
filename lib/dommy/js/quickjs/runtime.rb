@@ -16,6 +16,7 @@ module Dommy
           @backend = Backend.new(**vm_opts)
           @bridge = Dommy::Js::HostBridge.new(@backend)
           @callback_error_listener = nil
+          @js_halted = false
         end
 
         def define_host_object(name, obj)
@@ -201,6 +202,14 @@ module Dommy
 
         def drain_microtasks
           @backend.drain_microtasks
+        rescue ::Quickjs::RuntimeError => e
+          # The microtask checkpoint hit out-of-memory and poisoned the VM. Per
+          # the "browsing never crashes" contract, don't let it escape the event
+          # loop: record it once (so it shows in js_errors / the activity log) and
+          # then no-op — the page's JS is dead, but the browser stays alive.
+          raise unless @backend.poisoned?
+
+          note_js_halted(e)
         end
 
         # Drive the document lifecycle: set `document.readyState` and fire the
@@ -454,8 +463,23 @@ module Dommy
         def handle_timer_error(error, timer)
           return false unless error.is_a?(::Quickjs::RuntimeError)
 
+          # An out-of-memory in a timer callback poisons the whole VM: the page's
+          # JS is dead from here on, so flag it (and report once) — not just this
+          # one callback.
+          note_js_halted(error) if @backend.poisoned?
           @callback_error_listener&.call(enrich_callback_error(error, timer))
           true
+        end
+
+        # The VM hit out-of-memory and is poisoned. Surface the failure ONCE (a
+        # repeated drain would otherwise report it every tick) so the user sees
+        # that the page's JavaScript stopped, then leave it to the no-op guards.
+        def note_js_halted(error)
+          return if @js_halted
+
+          @js_halted = true
+          @callback_error_listener&.call(error)
+          nil
         end
 
         # Attach the timer's scheduling stack (where the page set the timer up) to
