@@ -94,4 +94,25 @@ class Dommy::Js::TestEventLoopConformance < Minitest::Test
     assert_equal 0, times.first, "the first timer fires at t=0"
     assert_operator times.last, :>=, 4, "deep nesting is clamped, so the clock advanced"
   end
+
+  # WHATWG web-messaging: MessagePort.postMessage delivers its `message` event
+  # from a TASK (the "post message" task source), not a microtask. So the
+  # script's own microtasks (queueMicrotask, a settled Promise) all run first, at
+  # the checkpoint after the current task, and the message arrives in a later
+  # task. This is the mechanism React's scheduler relies on to yield as a
+  # macrotask — delivering it as a microtask makes React never yield.
+  def test_message_port_postmessage_is_a_task_not_a_microtask
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      const mc = new MessageChannel();
+      mc.port2.onmessage = () => { ORDER.push("message"); };
+      mc.port1.postMessage("x");
+      queueMicrotask(() => { ORDER.push("microtask"); });
+      Promise.resolve().then(() => { ORDER.push("promise"); });
+    JS
+    @rt.run_until_idle
+
+    assert_equal "microtask,promise,message", order,
+      "MessagePort.postMessage delivers via a task, after the microtask checkpoint"
+  end
 end
