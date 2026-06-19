@@ -70,6 +70,27 @@ class Dommy::Js::TestEventLoopConformance < Minitest::Test
       "fetch resolves in a later task, after the script's microtask checkpoint"
   end
 
+  # Promises/A+: when a `.then` callback returns a thenable, the chain must ADOPT
+  # it — wait for it to settle before resolving downstream. A host promise (from
+  # fetch) whose callback returns a *native* engine promise must wait for that
+  # native promise, not resolve immediately. Without adoption, `after` runs
+  # before `inner` — the reorder that made note.com's Apollo HttpLink fire
+  # "complete" before "next" (#95).
+  def test_host_promise_adopts_a_native_thenable_returned_from_then
+    @win.__js_set__("__fetchy_stub__",
+      { "https://g/q" => { "status" => 200, "body" => "x", "contentType" => "text/plain" } })
+    @rt.execute(<<~JS)
+      globalThis.ORDER = [];
+      fetch("https://g/q")
+        .then(() => Promise.resolve().then(() => Promise.resolve()).then(() => { ORDER.push("inner"); }))
+        .then(() => { ORDER.push("after"); });
+    JS
+    @rt.run_until_idle
+
+    assert_equal "inner,after", order,
+      "a returned native thenable is adopted; downstream waits for it"
+  end
+
   # HTML timer initialization steps: a timer nested deeper than 5 with a sub-4ms
   # timeout is clamped to 4ms. Besides matching browsers, this is what keeps a
   # self-rescheduling setTimeout(0) from spinning forever at the same instant —
