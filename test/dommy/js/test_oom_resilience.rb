@@ -16,7 +16,9 @@ class Dommy::Js::TestOomResilience < Minitest::Test
     backend = Backend.new(memory_limit: 8 * 1024 * 1024) # tiny ceiling to force OOM fast
 
     # Allocate without bound until the VM runs out of memory: the gem raises and
-    # marks the VM poisoned.
+    # marks the VM poisoned. Whether an OOM poisons the VM (vs. unwinding as a
+    # recoverable JS exception) depends on the allocator's state, so this file
+    # runs in its own process (see the Rakefile) to stay deterministic.
     assert_raises(::Quickjs::RuntimeError) do
       backend.eval("var a = []; for (;;) { a.push(new Array(100000).fill(7)); }")
     end

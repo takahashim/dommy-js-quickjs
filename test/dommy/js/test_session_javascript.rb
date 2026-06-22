@@ -1,7 +1,16 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require "dommy/js/quickjs/rack"
+
+# dommy-rack isn't published yet, so it's only on the load path inside the
+# dommy monorepo. In a standalone clone (e.g. CI), skip this file rather than
+# aborting the whole suite at load time.
+begin
+  require "dommy/js/quickjs/rack"
+rescue LoadError
+  warn "skipping test_session_javascript.rb: dommy-rack not available"
+  return
+end
 
 # Dommy::Rack::Session.new(app, javascript: true) — Phase 3 Rails integration
 # engine: page <script>s boot on navigation, interaction verbs drive JS, and

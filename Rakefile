@@ -3,17 +3,30 @@
 require "bundler/gem_tasks"
 require "minitest/test_task"
 
-Minitest::TestTask.create
+# The OOM-resilience test forces a real QuickJS out-of-memory. Whether an OOM
+# poisons the VM (vs. unwinding as a recoverable JS exception) depends on the
+# allocator's state, which other JS-heavy tests in the same process perturb — so
+# it runs in its own process to stay deterministic.
+OOM_TEST = "test/dommy/js/test_oom_resilience.rb"
+
+Minitest::TestTask.create(:test) do |t|
+  t.test_globs = FileList["test/**/test_*.rb"].exclude(OOM_TEST)
+end
+
+Minitest::TestTask.create(:test_oom) do |t|
+  t.test_globs = [OOM_TEST]
+end
 
 namespace :test do
   desc "Run the full test suite including the heavy (thousands-of-subtests) WPT files"
   task :all do
     ENV["WPT_HEAVY"] = "1"
     Rake::Task["test"].invoke
+    Rake::Task["test_oom"].invoke
   end
 end
 
-task default: :test
+task default: %i[test test_oom]
 
 namespace :wpt do
   desc "Run the vendored WPT corpus against the bridge and report a conformance rate"
