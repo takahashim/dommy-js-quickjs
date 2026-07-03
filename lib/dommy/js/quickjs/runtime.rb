@@ -114,6 +114,7 @@ module Dommy
         # trailing Promise expression would trip the gem's "unawaited Promise"
         # guard. Drains microtasks so queued .then work lands before returning.
         def execute(js)
+          bump_dom_epoch
           @backend.eval("(function () {\n#{js}\n})();")
           drain_microtasks
           nil
@@ -125,6 +126,7 @@ module Dommy
         # `var Vue = (function(){…})({})`, which an IIFE wrapper (execute) would
         # trap in function scope. Drains microtasks afterward.
         def load_script(js)
+          bump_dom_epoch
           @backend.eval(js)
           drain_microtasks
           nil
@@ -134,6 +136,7 @@ module Dommy
         # `cache_key` (an external script's URL) and reuses it across VMs —
         # avoiding a re-parse of large vendored bundles on every page load.
         def load_script_cached(js, cache_key:)
+          bump_dom_epoch
           @backend.run_compiled(ScriptCache.compiled(cache_key, js))
           drain_microtasks
           nil
@@ -149,6 +152,7 @@ module Dommy
         # for side effects). Bare specifiers / absolute paths in its imports
         # resolve through the module loader. Drains microtasks afterward.
         def load_module(source)
+          bump_dom_epoch
           @backend.import_module(source)
           drain_microtasks
           nil
@@ -157,6 +161,7 @@ module Dommy
         # Evaluate an external module by URL (the loader fetches it); its
         # relative imports resolve against that URL. Drains microtasks.
         def load_module_url(url)
+          bump_dom_epoch
           @backend.import_module_url(url)
           drain_microtasks
           nil
@@ -171,9 +176,19 @@ module Dommy
         # attempt runs nothing. The result is awaited, so a Promise resolves
         # before returning.
         def evaluate(js)
+          bump_dom_epoch
           evaluate_settled("(#{js.strip.sub(/;\s*\z/, "")})")
         rescue ::Quickjs::SyntaxError
           evaluate_settled("(async () => {\n#{js}\n})()")
+        end
+
+        # Ruby -> JS entry: Ruby code (test drivers, script boot) may have
+        # mutated the DOM since JS last ran, so invalidate the bridge's
+        # attribute snapshots (see host_runtime.js). A no-op before the host
+        # runtime is installed.
+        def bump_dom_epoch
+          @backend.eval("globalThis.__rbHost && globalThis.__rbHost.bumpDomEpoch();")
+          nil
         end
 
         # Evaluate `expr` to its awaited value, driving the event loop so a result
