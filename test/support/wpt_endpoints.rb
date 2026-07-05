@@ -25,6 +25,7 @@ module Dommy
 
         case ::File.basename(uri.path)
         when "status.py" then status_py(uri, url)
+        when "inspect-headers.py" then inspect_headers_py(uri, headers, url)
         end
       end
 
@@ -50,6 +51,23 @@ module Dommy
         ::Dommy::Resources::Response.new(
           status: code, status_text: text, headers: headers,
           body: content, url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/inspect-headers.py: reflect chosen request headers
+      # back so a test can assert what was sent — `?headers=Name1|Name2`. For each
+      # present request header it adds a response header `x-request-<name>` with
+      # that header's value. `headers:` reaches here as a lowercased-name Hash.
+      def inspect_headers_py(uri, req_headers, url)
+        req = (req_headers || {}).transform_keys { |k| k.to_s.downcase }
+        out = {}
+        (query(uri)["headers"] || "").split("|").each do |name|
+          key = name.strip.downcase
+          out["x-request-#{key}"] = req[key] if req.key?(key)
+        end
+        out["Access-Control-Allow-Origin"] = "*"
+        ::Dommy::Resources::Response.new(
+          status: 200, status_text: "OK", headers: out, body: "", url: url.to_s, redirected: false
         )
       end
 
