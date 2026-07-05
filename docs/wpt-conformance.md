@@ -15,7 +15,31 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-05-31、pseudo-element drop + null/no-param の後)
+## スナップショット (2026-07-05、iframe ナビゲーション + nodeValue + D1a の後)
+
+```
+  accname     300/303   (99.0%)
+  css        3930/3980  (98.7%)
+  dom       33749/33932 (99.5%)   — iframe src ナビ実装で ParentNode-querySelector-All 0→1961/1975,
+                                     Element-matches 0/1→668/669, createElementNS 121→562/596
+  domparsing   98/100   (98.0%)
+  encoding    187/191   (97.9%)
+  html        127/151   (84.1%)
+  url        1395/1397  (99.9%)
+  wai-aria    387/389   (99.5%)
+  total     40173/40443 (99.3%)   — 245 ファイル / 192 完全グリーン / 0 errored
+```
+
+> **iframe `<src>` ナビゲーション → +数千 subtests** (total 37037/37800 → 40173/40443)。`WptRunner` が
+> `<iframe src>` のコンテンツ文書をナビゲート (fetch → parse → contentDocument 設定 → load 発火) して
+> いなかった。window `load` はスクリプト boot 中に発火するので、静的 iframe はそれ以前に wire する必要が
+> ある → boot を `execute_scripts: false` + 手動 `ScriptBoot.run_document_scripts` に組み替え、その前後で
+> `wire_iframes` (リソース層で src を汎用解決、`.xml`/`.xhtml` は XML パーサ)。動的 iframe (ParentNode 系)
+> はポンプ各ラウンドで wire しフレーム load を発火。あわせて `Element#nodeValue`→`null` (createElementNS の
+> nodeValue assert)、`JSON.parse("null")` で全ファイルが errored になるガードを追加。残る createElement(NS)
+> の 66 件は Makiri XML の name 厳格性 (`":"` 等) = backend 限界。
+
+## (旧) スナップショット (2026-05-31、pseudo-element drop + null/no-param の後)
 
 ```
   dom        7049/7561  (93.2%)   — うち querySelector-All 1763/1977, Element-matches 593/672, dom/abort 34/37
