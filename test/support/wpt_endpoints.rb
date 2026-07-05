@@ -26,6 +26,7 @@ module Dommy
         case ::File.basename(uri.path)
         when "status.py" then status_py(uri, url)
         when "inspect-headers.py" then inspect_headers_py(uri, headers, url)
+        when "redirect.py" then redirect_py(uri, url)
         end
       end
 
@@ -68,6 +69,20 @@ module Dommy
         out["Access-Control-Allow-Origin"] = "*"
         ::Dommy::Resources::Response.new(
           status: 200, status_text: "OK", headers: out, body: "", url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/redirect.py: a raw 3xx redirect — `?redirect_status=`
+      # (default 302) and an optional `?location=` (the Location header). The fetch
+      # polyfill does the following itself (mode follow/manual/error), so this just
+      # returns the redirect response unfollowed.
+      def redirect_py(uri, url)
+        q = query(uri)
+        status = (q["redirect_status"] || q["status"] || "302").to_i
+        location = q["location"]
+        ::Dommy::Resources::Response.new(
+          status: status, status_text: "", headers: location ? {"Location" => location} : {},
+          body: "", url: url.to_s, redirected: false
         )
       end
 
