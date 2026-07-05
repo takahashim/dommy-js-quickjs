@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "wpt_endpoints"
 module Dommy
   module Js
     # The resource layer a real WPT test page resolves its `<script src>`
@@ -66,6 +67,9 @@ module Dommy
             "/resources/testdriver-vendor.js" => "",
             "/resources/testdriver-actions.js" => ""
           ),
+          # Dynamic WPT server endpoints (resources/*.py) that fetch/xhr tests hit,
+          # ahead of the static tree so an endpoint wins over any same-named file.
+          WptEndpoints.new,
           ::Dommy::Resources.file_system(root: WPT_ROOT, base_url: "/")
         )
       end
