@@ -841,6 +841,95 @@ class Dommy::Js::TestTurboIntegration < Minitest::Test
     assert_operator fetch_count, :>=, 1
   end
 
+  # --- Functional-suite behaviors ported as hand-written cases ---------------
+  # Turbo's functional/ + integration/ suites are Playwright-only (real browser
+  # + Koa server + cross-page navigation) and can't run in the single-VM
+  # conformance harness. The cases below re-express a few of those behaviors
+  # through Turbo's public API on Dommy, covering ground the unit conformance
+  # runner (rake turbo:conformance) doesn't reach.
+
+  # pausable_rendering_tests: preventing turbo:before-render pauses the render
+  # until detail.resume() is called — the body is NOT swapped while paused, then
+  # swaps once resumed.
+  def test_turbo_pausable_rendering
+    load_page("<!DOCTYPE html><html><head></head><body><p id='c'>A</p></body></html>")
+    @h.stub_fetch("http://localhost/b" => { "status" => 200, "contentType" => "text/html",
+      "body" => "<html><body><p id='c'>B</p></body></html>" })
+    @h.execute(<<~JS)
+      globalThis.__resume = null;
+      document.addEventListener("turbo:before-render", (e) => {
+        e.preventDefault();
+        globalThis.__resume = e.detail.resume;
+      });
+    JS
+    @h.execute('Turbo.visit("/b");')
+    @h.pump(rounds: 40)
+
+    # Paused: resume captured, body still A.
+    assert_equal "function", @h.evaluate("typeof globalThis.__resume")
+    assert_equal "A", @h.evaluate('document.getElementById("c").textContent')
+
+    # Resuming completes the render.
+    @h.execute("globalThis.__resume();")
+    @h.pump(rounds: 40)
+    assert_equal "B", @h.evaluate('document.getElementById("c").textContent')
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # pausable_requests_tests: preventing turbo:before-fetch-request pauses the
+  # request until detail.resume() is called — no fetch fires while paused, then
+  # the request goes out and its response renders once resumed.
+  def test_turbo_pausable_requests
+    load_page("<!DOCTYPE html><html><head></head><body><p id='c'>A</p></body></html>")
+    @h.stub_fetch("http://localhost/b" => { "status" => 200, "contentType" => "text/html",
+      "body" => "<html><body><p id='c'>B</p></body></html>" })
+    @h.execute(<<~JS)
+      globalThis.__resume = null;
+      document.addEventListener("turbo:before-fetch-request", (e) => {
+        e.preventDefault();
+        globalThis.__resume = e.detail.resume;
+      });
+    JS
+    @h.execute('Turbo.visit("/b");')
+    @h.pump(rounds: 40)
+
+    # Paused before the fetch: no request yet, body still A.
+    assert_equal "function", @h.evaluate("typeof globalThis.__resume")
+    assert_equal 0, (@h.window.__js_get__("__fetch_count__") || 0)
+    assert_equal "A", @h.evaluate('document.getElementById("c").textContent')
+
+    # Resuming lets the request go out and render.
+    @h.execute("globalThis.__resume();")
+    @h.pump(rounds: 40)
+    assert_equal "B", @h.evaluate('document.getElementById("c").textContent')
+    assert_operator (@h.window.__js_get__("__fetch_count__") || 0), :>=, 1
+    assert_empty @h.errors, @h.error_report
+  end
+
+  # page_refresh_stream_action_tests: a <turbo-stream action="refresh"> triggers
+  # a page refresh. With <meta name="turbo-refresh-method" content="morph"> the
+  # page renders as a morph against a freshly fetched snapshot, so the identity
+  # of unchanged nodes is preserved (default refresh method is a full replace).
+  def test_turbo_stream_action_refresh
+    head = "<title>A</title><meta name='turbo-refresh-method' content='morph'>"
+    load_page("<!DOCTYPE html><html><head>#{head}</head>" \
+              "<body><p id='c'>OLD</p></body></html>")
+    @h.stub_fetch("http://localhost/" => { "status" => 200, "contentType" => "text/html",
+      "body" => "<html><head>#{head}</head><body><p id='c'>REFRESHED</p></body></html>" })
+    @h.execute('globalThis.__p = document.getElementById("c"); globalThis.__p.__m = "M";')
+    @h.execute(
+      "Turbo.renderStreamMessage('<turbo-stream action=\"refresh\"></turbo-stream>');"
+    )
+    # The refresh is debounced, then fetches and morphs.
+    @h.pump(rounds: 80, step_ms: 50)
+
+    assert_equal "REFRESHED", @h.evaluate('document.getElementById("c").textContent')
+    # Morph preserved node identity (and the expando) rather than replacing.
+    assert_equal true, @h.evaluate('globalThis.__p === document.getElementById("c")')
+    assert_equal "M", @h.evaluate('document.getElementById("c").__m')
+    assert_empty @h.errors, @h.error_report
+  end
+
   private
 
   # Connect a <turbo-stream-source src=...>, capturing the EventSource/WebSocket
