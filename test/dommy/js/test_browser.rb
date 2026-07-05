@@ -62,7 +62,11 @@ class Dommy::Js::TestBrowser < Minitest::Test
       assert_equal "OPTION", b.evaluate("new Option().tagName")
       assert_equal "Hi", b.evaluate('new Option("Hi", "v").textContent')
       assert_equal "v", b.evaluate('new Option("Hi", "v").value')
-      assert_equal true, b.evaluate('new Option("Hi", "v", true).selected')
+      # 3rd arg is defaultSelected (the `selected` content attribute); the
+      # selectedness is set by the 4th arg (WHATWG Option constructor).
+      assert_equal true, b.evaluate('new Option("Hi", "v", true).defaultSelected')
+      assert_equal false, b.evaluate('new Option("Hi", "v", true).selected')
+      assert_equal true, b.evaluate('new Option("Hi", "v", true, true).selected')
       assert_equal true, b.evaluate("new Option() instanceof HTMLOptionElement")
     end
   end
