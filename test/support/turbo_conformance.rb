@@ -104,6 +104,12 @@ module Dommy
         def boot
           rt = Dommy::Js::Quickjs::Runtime.new
           win = Dommy.parse(PAGE)
+          # Turbo's StreamElement schedules its render + self-removal off a
+          # requestAnimationFrame; a test then asserts after its own single
+          # `await nextAnimationFrame()`. Settle each frame callback's microtask
+          # chain before the next same-frame callback so the framework's rAF work
+          # completes before the test's rAF-scheduled assertion observes it.
+          win.scheduler.raf_checkpoint_each = true
           rt.define_host_object("document", win.document)
           rt.install_window(win)
           rt.install_browser_globals
