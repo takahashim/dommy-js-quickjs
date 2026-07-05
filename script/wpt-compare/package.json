@@ -1,0 +1,7 @@
+{
+  "name": "wpt-compare",
+  "private": true,
+  "type": "module",
+  "description": "Run Dommy's vendored WPT corpus under jsdom and happy-dom to compare with Dommy",
+  "devDependencies": { "jsdom": "^27", "happy-dom": "^20" }
+}
