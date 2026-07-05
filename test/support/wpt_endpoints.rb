@@ -92,6 +92,8 @@ module Dommy
         when "redirect-empty-location.py" then redirect_empty_location_py(url)
         when "clean-stash.py" then clean_stash_py(uri, url)
         when "preflight.py" then preflight_py(method, uri, headers, url)
+        when "content.py" then content_py(uri, body, url)
+        when "echo-content-type.py" then echo_content_type_py(headers, url)
         end
       end
 
@@ -214,6 +216,28 @@ module Dommy
         headers["x-control-request-headers"] = data["control_request_headers"] if data["control_request_headers"]
         ::Dommy::Resources::Response.new(
           status: 200, status_text: "OK", headers: headers, body: "", url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/content.py: echo the request body back as the response
+      # body (a `content=` query param overrides it), with a `content_type=`
+      # (default text/plain) response type.
+      def content_py(uri, body, url)
+        q = query(uri)
+        ::Dommy::Resources::Response.new(
+          status: 200, status_text: "OK",
+          headers: {"Content-Type" => (q["content_type"] || "text/plain")},
+          body: q["content"] || body.to_s, url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/echo-content-type.py: return the request's Content-Type
+      # header value as the response body (so a test can assert what was sent).
+      def echo_content_type_py(req_headers, url)
+        req = (req_headers || {}).transform_keys { |k| k.to_s.downcase }
+        ::Dommy::Resources::Response.new(
+          status: 200, status_text: "OK", headers: {"Content-Type" => "text/plain"},
+          body: req["content-type"].to_s, url: url.to_s, redirected: false
         )
       end
 
