@@ -110,25 +110,29 @@ module Dommy
           # chain before the next same-frame callback so the framework's rAF work
           # completes before the test's rAF-scheduled assertion observes it.
           win.scheduler.raf_checkpoint_each = true
-          # A minimal same-origin "server" for the one stream action that
-          # navigates: `<turbo-stream action="refresh">` re-fetches the current
-          # page and morphs the response into the document. Serving the canonical
-          # page for that request lets the refresh run end-to-end (fetch -> Visit
-          # -> morph) in the single VM; the fetch polyfill's __fetch_handler__
-          # seam (the same one dommy-rack uses to route to a real Rack app)
-          # supplies the response. Any other URL falls through to 404.
-          page_url = win.__internal_resolve_url__("")
-          win.globals["__fetch_handler__"] = proc do |url, _init|
-            next nil unless url == page_url
-
-            {"body" => PAGE, "status" => 200, "contentType" => "text/html"}
-          end
+          install_fetch_routes(win)
           rt.define_host_object("document", win.document)
           rt.install_window(win)
           rt.install_browser_globals
           rt.execute(::File.read(SHIM))
           rt.execute(::File.read(BUNDLE))
           [rt, win]
+        end
+
+        # The unit suite's one navigating action — `<turbo-stream action="refresh">`
+        # — re-fetches the current page and morphs the response into the document.
+        # Rather than hand-roll a __fetch_handler__ proc, drive the fetch polyfill
+        # through the same resource layer the rest of Dommy uses: a
+        # `Dommy::Resources` adapter installed via `Resources::FetchHandler`. Here
+        # a `static` route map serves the canonical page for the document's own
+        # URL; unmatched URLs return nil and fall through to a 404. Extend ROUTES
+        # (or swap in `Resources.file_system` / `Dommy::Rack::Resources`) to serve
+        # richer fixtures for suites that need more than the current page.
+        def install_fetch_routes(win)
+          # `static` matches a route by request path as well as full URL, so "/"
+          # serves the document's own URL (what action=refresh re-fetches).
+          resources = Dommy::Resources.static("/" => { "body" => PAGE, "content_type" => "text/html" })
+          win.globals["__fetch_handler__"] = Dommy::Resources::FetchHandler.new(resources)
         end
       end
     end
