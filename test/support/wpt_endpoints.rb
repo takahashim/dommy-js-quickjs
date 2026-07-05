@@ -5,6 +5,61 @@ require "uri"
 
 module Dommy
   module Js
+    # Wraps a Resources adapter to apply the wptserve `?pipe=` query — the
+    # substitution WPT uses to shape a static resource's response inline. The
+    # pipe is stripped from the URL before the inner adapter resolves it (so a
+    # file / endpoint sees its real path + other params), then applied to the
+    # Response. Supports `header(name,value)` (add a response header) and
+    # `status(code)`, chained with `|` — enough for the CORS tests
+    # (`top.txt?pipe=header(Access-Control-Allow-Origin,*)`).
+    class WptPipe
+      def initialize(inner)
+        @inner = inner
+      end
+
+      def get(url, headers: {}) = request(method: "GET", url: url, headers: headers)
+
+      def request(method:, url:, headers: {}, body: nil)
+        pipe, clean_url = extract_pipe(url)
+        response = @inner.request(method: method, url: clean_url, headers: headers, body: body)
+        return response if response.nil? || pipe.nil?
+
+        apply(response, pipe)
+      end
+
+      private
+
+      # Pull `pipe=…` out of the query, returning [pipe_string_or_nil, url_without_pipe].
+      def extract_pipe(url)
+        uri = URI.parse(url.to_s)
+        params = (uri.query || "").split("&")
+        pipe_param = params.find { |p| p.start_with?("pipe=") }
+        return [nil, url] unless pipe_param
+
+        uri.query = (params - [pipe_param]).join("&")
+        uri.query = nil if uri.query.empty?
+        [CGI.unescape(pipe_param.delete_prefix("pipe=")), uri.to_s]
+      rescue URI::InvalidURIError
+        [nil, url]
+      end
+
+      def apply(response, pipe)
+        pipe.split("|").each do |command|
+          m = command.match(/\A(\w+)\((.*)\)\z/)
+          next unless m
+
+          case m[1]
+          when "header"
+            name, value = m[2].split(",", 2)
+            (response.headers ||= {})[name.strip] = value.to_s
+          when "status"
+            response.status = m[2].to_i
+          end
+        end
+        response
+      end
+    end
+
     # A `Dommy::Resources` adapter that emulates the handful of dynamic WPT
     # server endpoints (`resources/*.py`) the fetch / xhr suites hit — the ones a
     # real WPT run answers with wptserve handlers. It implements the same

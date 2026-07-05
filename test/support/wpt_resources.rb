@@ -59,6 +59,10 @@ module Dommy
       # like "/css/cssom/CSSStyleSheet.html"), so its relative includes resolve
       # against the right WPT directory.
       def build
+        WptPipe.new(chain_adapters)
+      end
+
+      def chain_adapters
         ::Dommy::Resources.chain(
           ::Dommy::Resources.static(
             "/resources/testharness.js" => ::File.read(TESTHARNESS),
