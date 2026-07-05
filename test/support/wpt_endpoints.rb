@@ -72,6 +72,13 @@ module Dommy
     # mirrors its wptserve script's contract (status.py, …). Grow this as more
     # fetch/xhr tests are vendored.
     class WptEndpoints
+      def initialize
+        # Server-side "stash" keyed by the tests' per-request token — one WptEndpoints
+        # lives for a whole test file, so a token set by one request (e.g. a
+        # recorded preflight) is visible to a later one, as wptserve's stash is.
+        @stash = {}
+      end
+
       def get(url, headers: {}) = request(method: "GET", url: url, headers: headers)
 
       def request(method:, url:, headers: {}, body: nil)
@@ -83,6 +90,8 @@ module Dommy
         when "inspect-headers.py" then inspect_headers_py(uri, headers, url)
         when "redirect.py" then redirect_py(uri, url)
         when "redirect-empty-location.py" then redirect_empty_location_py(url)
+        when "clean-stash.py" then clean_stash_py(uri, url)
+        when "preflight.py" then preflight_py(method, uri, headers, url)
         end
       end
 
@@ -149,6 +158,56 @@ module Dommy
         ::Dommy::Resources::Response.new(
           status: 302, status_text: "", headers: {"Location" => ""},
           body: "", url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/clean-stash.py: take (clear) the stash for a token,
+      # returning "1" if it held data, else "0".
+      def clean_stash_py(uri, url)
+        token = query(uri)["token"]
+        body = @stash.delete(token) ? "1" : "0"
+        ::Dommy::Resources::Response.new(
+          status: 200, status_text: "OK", headers: {}, body: body, url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/preflight.py: a CORS endpoint that records a preflight
+      # (OPTIONS) in the token stash and reflects it on the actual request via the
+      # `x-did-preflight` header. On OPTIONS it echoes the allowed methods/headers
+      # from the query (so the fetch layer's preflight check can pass/fail); on the
+      # actual request it exposes the stashed preflight state.
+      def preflight_py(method, uri, req_headers, url)
+        q = query(uri)
+        token = q["token"]
+        acao = q["origin"] || "*"
+
+        if method.to_s.upcase == "OPTIONS"
+          req = (req_headers || {}).transform_keys { |k| k.to_s.downcase }
+          headers = {"Content-Type" => "text/plain", "Access-Control-Allow-Origin" => acao}
+          headers["Access-Control-Max-Age"] = q["max_age"] if q["max_age"]
+          headers["Access-Control-Allow-Headers"] = q["allow_headers"] if q["allow_headers"]
+          headers["Access-Control-Allow-Methods"] = q["allow_methods"] if q["allow_methods"]
+          @stash[token] = {
+            "preflight" => "1",
+            "control_request_headers" => req["access-control-request-headers"],
+          } if token
+          status = (q["preflight_status"] || "200").to_i
+          return ::Dommy::Resources::Response.new(
+            status: status, status_text: "OK", headers: headers, body: "", url: url.to_s, redirected: false
+          )
+        end
+
+        data = (token && @stash.delete(token)) || {}
+        headers = {
+          "Content-Type" => "text/plain",
+          "Access-Control-Allow-Origin" => acao,
+          "Access-Control-Expose-Headers" =>
+            "x-did-preflight, x-control-request-headers, x-referrer, x-preflight-referrer, x-origin",
+          "x-did-preflight" => data["preflight"] || "0",
+        }
+        headers["x-control-request-headers"] = data["control_request_headers"] if data["control_request_headers"]
+        ::Dommy::Resources::Response.new(
+          status: 200, status_text: "OK", headers: headers, body: "", url: url.to_s, redirected: false
         )
       end
 
