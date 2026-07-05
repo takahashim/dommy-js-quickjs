@@ -21,6 +21,20 @@ module Dommy
     # VM per test resets memory completely between tests, so the run is bounded
     # and crash-free regardless of suite size — at the cost of re-parsing the
     # (cheap, ~1.3 MB resident) bundle each time.
+    #
+    # KNOWN FAILURES WE DON'T PURSUE (211/214; the other 211 cover all real
+    # Stimulus behavior — controllers, targets, actions, values, outlets,
+    # lifecycle, observers). The remaining three are ApplicationStartTests, which
+    # exercise Stimulus's own startup, not a Dommy DOM bug:
+    #
+    #   * ApplicationStartTests (3): load an `<iframe src>` fixture whose script
+    #     runs a Stimulus app IN THE IFRAME's realm and `parent.postMessage`s the
+    #     result back (verifying Stimulus issue #97 — targets parsed after an
+    #     inline script during readyState "loading"). Passing them needs per-iframe
+    #     JS realms (Dommy is a single QuickJS VM with one global — an iframe has
+    #     no separate window/document/globals to run its own scripts) plus
+    #     cross-frame postMessage with `event.source`. That's a large multi-realm
+    #     feature with little value for Dommy's Hotwire/Rails target, not a fix.
     class StimulusConformance
       BUNDLE = ::File.expand_path("../fixtures/stimulus-tests.umd.js", __dir__)
       SHIM   = ::File.expand_path("qunit_shim.js", __dir__)
