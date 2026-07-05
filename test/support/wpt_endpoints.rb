@@ -184,6 +184,7 @@ module Dommy
         if method.to_s.upcase == "OPTIONS"
           req = (req_headers || {}).transform_keys { |k| k.to_s.downcase }
           headers = {"Content-Type" => "text/plain", "Access-Control-Allow-Origin" => acao}
+          headers["Access-Control-Allow-Credentials"] = "true" if q.key?("credentials")
           headers["Access-Control-Max-Age"] = q["max_age"] if q["max_age"]
           headers["Access-Control-Allow-Headers"] = q["allow_headers"] if q["allow_headers"]
           headers["Access-Control-Allow-Methods"] = q["allow_methods"] if q["allow_methods"]
@@ -197,6 +198,7 @@ module Dommy
           )
         end
 
+        req = (req_headers || {}).transform_keys { |k| k.to_s.downcase }
         data = (token && @stash.delete(token)) || {}
         headers = {
           "Content-Type" => "text/plain",
@@ -204,7 +206,11 @@ module Dommy
           "Access-Control-Expose-Headers" =>
             "x-did-preflight, x-control-request-headers, x-referrer, x-preflight-referrer, x-origin",
           "x-did-preflight" => data["preflight"] || "0",
+          "x-preflight-referrer" => data["preflight_referrer"].to_s,
+          "x-referrer" => req["referer"].to_s,
+          "x-origin" => req["origin"].to_s,
         }
+        headers["Access-Control-Allow-Credentials"] = "true" if q.key?("credentials")
         headers["x-control-request-headers"] = data["control_request_headers"] if data["control_request_headers"]
         ::Dommy::Resources::Response.new(
           status: 200, status_text: "OK", headers: headers, body: "", url: url.to_s, redirected: false
