@@ -576,6 +576,9 @@ module Dommy
             // frame-walking loops terminate instead of dereferencing undefined.
             globalThis.parent = globalThis;
             globalThis.top = globalThis;
+            // `frames` is the window itself, indexable by child-frame number
+            // (`frames[0]` === the first <iframe>'s contentWindow).
+            globalThis.frames = window;
             globalThis.location = window.location;
             globalThis.history = window.history;
             globalThis.navigator = window.navigator;

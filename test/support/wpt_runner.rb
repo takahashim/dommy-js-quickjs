@@ -159,13 +159,22 @@ module Dommy
             next if iframe.content_document
 
             src = iframe.get_attribute("src").to_s
-            next if src.empty?
+            src = "" if src == "about:blank"
+            srcdoc = iframe.get_attribute("srcdoc")
+            sub =
+              if !src.empty?
+                resolved = resolve_url(base_url, src)
+                response = resources.get(resolved.sub(/#.*\z/, ""))
+                next unless response&.success? && response.body
 
-            resolved = resolve_url(base_url, src)
-            response = resources.get(resolved.sub(/#.*\z/, ""))
-            next unless response&.success? && response.body
-
-            sub = parse_framed_document(response.body, resolved)
+                parse_framed_document(response.body, resolved)
+              else
+                # A srcless (blank/about:blank) or `srcdoc` iframe gets its own
+                # empty/srcdoc document, so `contentWindow` resolves and its
+                # cross-realm globals (contentWindow.AbortSignal / DOMException /
+                # Comment) are available — used by dom/abort + constructor tests.
+                ::Dommy.parse(srcdoc.to_s.empty? ? "<!DOCTYPE html><html><head></head><body></body></html>" : srcdoc.to_s)
+              end
             next unless sub
 
             iframe.__internal_set_content_document__(sub.document)
