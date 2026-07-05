@@ -27,6 +27,7 @@ module Dommy
         when "status.py" then status_py(uri, url)
         when "inspect-headers.py" then inspect_headers_py(uri, headers, url)
         when "redirect.py" then redirect_py(uri, url)
+        when "redirect-empty-location.py" then redirect_empty_location_py(url)
         end
       end
 
@@ -82,6 +83,16 @@ module Dommy
         location = q["location"]
         ::Dommy::Resources::Response.new(
           status: status, status_text: "", headers: location ? {"Location" => location} : {},
+          body: "", url: url.to_s, redirected: false
+        )
+      end
+
+      # wptserve resources/redirect-empty-location.py: a 302 whose Location header
+      # is present but empty — a network error under follow mode, an opaqueredirect
+      # under manual.
+      def redirect_empty_location_py(url)
+        ::Dommy::Resources::Response.new(
+          status: 302, status_text: "", headers: {"Location" => ""},
           body: "", url: url.to_s, redirected: false
         )
       end
