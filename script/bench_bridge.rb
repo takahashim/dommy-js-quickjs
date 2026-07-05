@@ -53,8 +53,16 @@ end
 bench("JS->Ruby: el.id read") do
   h.evaluate("var s=0; for (var i=0;i<#{N};i++) s += __el.id.length; s")
 end
+# textContent + traversal props are cached per-DOM-epoch (D2b), so a walk's
+# repeated reads cross once, not once per iteration.
 bench("JS->Ruby: textContent read") do
   h.evaluate("var s=0; for (var i=0;i<#{N};i++) s += __el.textContent.length; s")
+end
+bench("JS->Ruby: parentNode read") do
+  h.evaluate("for (var i=0;i<#{N};i++) __el.parentNode; 0")
+end
+bench("JS->Ruby: nextSibling read") do
+  h.evaluate("for (var i=0;i<#{N};i++) __el.nextSibling; 0")
 end
 bench("JS->Ruby: setAttribute('data-x', i)") do
   h.evaluate("for (var i=0;i<#{N};i++) __el.setAttribute('data-x', ''+i); 0")
@@ -89,6 +97,23 @@ bench("Ruby: mutate+querySelector (AST cache path)") do
     el.set_attribute("data-n", i.to_s) # bumps style_generation -> query cache miss
     doc.query_selector("#root .a[data-x]")
   end
+end
+
+# Bulk DOM construction into a DETACHED subtree, then a single attach — the SPA
+# hydration / fragment-building pattern. This is where MutationCoordinator gating
+# (D1c) shows: each detached append skips the O(subtree) connected/disconnected
+# lifecycle walk (nothing connected can fire) and, with no observers, the record
+# allocation. Attaching once still fires lifecycle for the whole subtree.
+bench("Ruby: detached bulk build + attach (mutation gating)") do
+  detached = doc.create_element("div")
+  N.times do
+    node = doc.create_element("div")
+    node.set_attribute("class", "x")
+    node.append_child(doc.create_text_node("t"))
+    detached.append_child(node)
+  end
+  el.append_child(detached)
+  el.remove_child(detached)
 end
 
 puts "--- VM lifecycle ---"
