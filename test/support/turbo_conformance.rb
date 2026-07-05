@@ -110,6 +110,19 @@ module Dommy
           # chain before the next same-frame callback so the framework's rAF work
           # completes before the test's rAF-scheduled assertion observes it.
           win.scheduler.raf_checkpoint_each = true
+          # A minimal same-origin "server" for the one stream action that
+          # navigates: `<turbo-stream action="refresh">` re-fetches the current
+          # page and morphs the response into the document. Serving the canonical
+          # page for that request lets the refresh run end-to-end (fetch -> Visit
+          # -> morph) in the single VM; the fetch polyfill's __fetch_handler__
+          # seam (the same one dommy-rack uses to route to a real Rack app)
+          # supplies the response. Any other URL falls through to 404.
+          page_url = win.__internal_resolve_url__("")
+          win.globals["__fetch_handler__"] = proc do |url, _init|
+            next nil unless url == page_url
+
+            {"body" => PAGE, "status" => 200, "contentType" => "text/html"}
+          end
           rt.define_host_object("document", win.document)
           rt.install_window(win)
           rt.install_browser_globals
