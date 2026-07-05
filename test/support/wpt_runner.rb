@@ -88,8 +88,24 @@ module Dommy
         # wrapped in a generated harness page that pulls in testharness, the
         # report shim, its META includes, and the test body — all as `<script>`
         # tags ScriptBoot runs in order.
+        # wptserve `.sub.` template substitutions, mapped onto the single-host
+        # harness: the document's own host and default ports stay same-origin,
+        # while the "second" ports and alternate hosts become distinct (cross-
+        # origin) URLs the path-based resource layer still serves. Enough for the
+        # CORS `.sub` tests that hard-code `http://{{host}}:{{ports[http][1]}}/…`.
+        WPT_SUBS = {
+          "{{host}}" => "localhost",
+          "{{ports[http][0]}}" => "80", "{{ports[http][1]}}" => "8001",
+          "{{ports[https][0]}}" => "443", "{{ports[https][1]}}" => "8444",
+          "{{ports[ws][0]}}" => "80", "{{ports[wss][0]}}" => "443",
+          "{{domains[]}}" => "localhost", "{{domains[www2]}}" => "www2.localhost",
+          "{{hosts[alt][]}}" => "not-localhost.test",
+          "{{hosts[alt][www2]}}" => "www2.not-localhost.test",
+        }.freeze
+
         def page_for(path, rel_path)
           source = ::File.read(path)
+          source = WPT_SUBS.reduce(source) { |s, (k, v)| s.gsub(k, v) } if rel_path.include?(".sub.")
           return source if rel_path.end_with?(".html", ".htm")
 
           includes = source.scan(META_SCRIPT).flatten
