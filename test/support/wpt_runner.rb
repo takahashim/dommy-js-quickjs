@@ -105,6 +105,10 @@ module Dommy
 
         def page_for(path, rel_path)
           source = ::File.read(path)
+          # Many WPT files are saved with a leading UTF-8 BOM; strip it so the
+          # HTML parser sees `<!DOCTYPE …>` at the top (a BOM before the doctype
+          # otherwise derails document parsing and the harness yields 0 subtests).
+          source = source.delete_prefix("﻿")
           source = WPT_SUBS.reduce(source) { |s, (k, v)| s.gsub(k, v) } if rel_path.include?(".sub.")
           return source if rel_path.end_with?(".html", ".htm")
 
