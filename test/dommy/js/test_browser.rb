@@ -224,4 +224,52 @@ class Dommy::Js::TestBrowser < Minitest::Test
       assert_nil b.evaluate('document.body.getAttribute("data-ran")')
     end
   end
+
+  # --- N3: cross-document navigation with a real JS realm swap ---
+
+  def nav_resources
+    Dommy::Resources.static(
+      "/" => {"content_type" => "text/html",
+              "body" => '<!doctype html><html><body><h1>A</h1>' \
+                        '<script>window.__page = "A"; document.title = "PageA";</script></body></html>'},
+      "/b" => {"content_type" => "text/html",
+               "body" => '<!doctype html><html><body><h1>B</h1>' \
+                         '<script>window.__leaked = (typeof window.__page !== "undefined"); ' \
+                         'document.title = "PageB";</script></body></html>'}
+    )
+  end
+
+  def test_js_navigation_replaces_document_in_a_fresh_realm
+    b = Dommy::Browser.visit("http://localhost/", resources: nav_resources)
+    assert_equal "PageA", b.evaluate("document.title")
+
+    # location.href= is a task: the swap is deferred, not synchronous.
+    b.execute("location.href = '/b'")
+    assert_equal "PageA", b.evaluate("document.title"), "not swapped mid-script"
+
+    b.settle
+    assert_equal "PageB", b.evaluate("document.title")
+    assert_equal "http://localhost/b", b.current_url
+    assert_equal false, b.evaluate("window.__leaked"), "the new page runs in a fresh realm"
+    assert_equal "undefined", b.evaluate("typeof window.__page")
+    assert_equal 2, b.history.length
+  ensure
+    b&.dispose
+  end
+
+  def test_back_forward_refetch_reboots_each_realm
+    b = Dommy::Browser.visit("http://localhost/", resources: nav_resources)
+    b.execute("location.href = '/b'")
+    b.settle
+    assert_equal "PageB", b.evaluate("document.title")
+
+    b.back
+    assert_equal "PageA", b.evaluate("document.title"), "back re-fetches and reboots page A"
+    assert_equal "A", b.evaluate("window.__page")
+
+    b.forward
+    assert_equal "PageB", b.evaluate("document.title")
+  ensure
+    b&.dispose
+  end
 end

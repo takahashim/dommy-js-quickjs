@@ -1,7 +1,7 @@
 # Dommy ナビゲーションモデル設計
 
 作成: 2026-07-07 / 更新: 2026-07-08
-ステータス: **N0 + N1 実装済み**(アンカー activation + fragment 同一文書ナビ + HashChangeEvent)。N2 以降は未着手
+ステータス: **N0–N3a 実装済み**(activation + fragment ナビ + HashChangeEvent + form submit JS API + core Browser の cross-document 文書置換/realm swap)。N3b(WPT vendor + iframe 共通化)・N4(dommy-rack/capybara 統合)は未着手
 関連: `docs/conformance-roadmap.md`(Phase 3/4 の最大宿題)、`docs/dom-library-comparison.md`、
 実装詳細 `docs/navigation-impl-N0-N1.md`
 
@@ -165,18 +165,38 @@ N0(ポート導入)→ N1(same-doc 完結)→ N2(form submission)→ N3(cross-do
   bridge smoke で `requestSubmit`/`new SubmitEvent`/`e.submitter` を実機確認。
 - 今後: WPT `form-submission-0` 系 vendor、Turbo の submit 介入系(N4 で click 集約後)。
 
-### N3: cross-document 文書置換(core Browser 実装 = ポート実装②)
-- `Browser#visit(url)` / delegate 実装: resources 取得 → 旧文書 pagehide/unload →
-  旧 Runtime dispose → 新 Window+Runtime 構築(D1)→ ScriptBoot → load
-- **in-flight レスポンスの破棄**: 非同期ネットワーク配送(dommynx の NetworkPool のように
-  fetch/XHR のレスポンスを後続イベントループタスクとして届ける構成)では、文書置換時に
-  **旧 realm 宛ての未適用レスポンスを破棄**する必要がある(新 Window に旧文書の応答が
-  届くと汚染)。置換パイプラインに「旧 Window 宛て pending タスクの無効化」を含める
-- `location.assign/replace/reload`、history 文書境界 traversal(D2: 再フェッチ)
-- redirect 追従は `Resources` チェーンの責務として実装(dommy-rack の実装を参考に共通化)
-- 検証: **WPT `html/browsers/history/the-history-interface`・`the-location-interface`・
+### N3a: cross-document 文書置換(core Browser = ポート実装②)✅ 実装済み
+- `Dommy::Navigation::Fetcher`(新規): `Resources` アダプタ上の URL 解決 + redirect 追従
+  (303→GET / 301・302 POST→GET / 307・308 は method+body 維持)+ GET params の query 畳み込み /
+  POST body 直列化。dommy-rack の redirect ループの Resources 版一般化。
+- `Dommy::Navigation::JointHistory`(新規): full-doc と same-doc(pushState)を 1 本のスタックに
+  持つタブ履歴。各 entry が `(url, window, windex)` を覚え、back/forward が「同一 live 文書の
+  popstate 走査」か「文書境界の再フェッチ」かを判定(dommy-rack `Rack::History` の core 版)。
+- `Browser` が **自身の NavigationDelegate** になる(`navigable: true` / `Browser.visit(url,
+  resources:)`)。既定 `Browser.new(html)` は従来通り NullDelegate(挙動変更ゼロ)。
+- 文書置換パイプライン(`perform_navigation!`): fetch(redirect 追従)→ 旧文書 pagehide/unload
+  発火(旧 realm 生存中)→ 旧 Runtime dispose → 新 Window parse + Runtime 構築 + ScriptBoot
+  (`install_runtime` を初回ブートと共用)→ joint history 更新。**非 document レスポンス
+  (JSON 等)/ network miss は現ページ維持**。
+- **ナビゲーションはタスク**: JS 起点(`location.href=` / form submit)の delegate 通知は
+  即時 swap せず `@pending_navigation` に記録し、次の drain 境界(settle / after_interaction /
+  advance_time)で実行(実行中 realm の JS がスタックに載ったまま dispose するのを回避)。
+  Ruby 起点(`visit`/`back`/`forward`/`reload`)は即時フラッシュ。
+- **in-flight レスポンスの破棄はオーナーシップで自動**: Scheduler は Window 所有・VM/timer は
+  Runtime 所有なので、旧 Runtime dispose + 旧 Window 破棄で pending timer/microtask は消滅
+  (専用のキャンセル API 不要)。async network の stale-window 対策は N4 で dommy-rack の
+  `window.equal?(@current_window)` ガードを踏襲。
+- 検証: core `test/test_browser_navigation.rb`(11 tests, `:null` runtime で Ruby 駆動経路)+
+  quickjs `test/dommy/js/test_browser.rb` に 2 tests(実 realm swap: fresh realm で再ブート・
+  `location.href=` の遅延フラッシュ・旧 realm グローバル非漏洩)。4スイート green
+  (dommy 3368 / quickjs 598 / dommy-rack 232 / capybara 1259)。
+
+### N3b: WPT vendor + iframe パイプライン共通化(未着手)
+- **WPT `html/browsers/history/the-history-interface`・`the-location-interface`・
   `history-traversal` の自己完結分を vendor**(jsdom も弱い領域: 期待失敗 27〜60/dir)
-- WptRunner の iframe 手動置換ロジックをこのパイプラインへ寄せる(重複解消)
+- WptRunner の iframe 手動 fetch→parse→contentDocument→load 置換ロジックを N3a の
+  パイプラインへ寄せる(重複解消)
+- same-origin 強制ポリシー(現状 core Browser は test tool として無制限)/ meta refresh 追従
 
 ### N4: dommy-rack / capybara-dommy / dommynx 統合
 - dommy-rack `Navigation` をポート実装③にリファクタ(redirect/same-origin/cookie/
