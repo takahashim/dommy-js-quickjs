@@ -146,13 +146,24 @@ N0(ポート導入)→ N1(same-doc 完結)→ N2(form submission)→ N3(cross-do
   fragment click)。WPT `scroll-to-fragid`/`the-location-interface` は scroll・iframe cross-doc
   依存で N1 単体では通せないため vendor 見送り(N3 で再訪)。
 
-### N2: form submission アルゴリズム
-- form data set 構築(名前付き有効コントロール列挙、submitter の name/value、
-  disabled/unchecked 除外 — B2 部品を再利用)
-- method=GET → query 直列化 / POST → urlencoded・multipart body
-- `form.submit()`(イベント無しで直行)と `requestSubmit()`(イベント有り)の区別は実装済みの
-  分岐を delegate 接続に拡張
-- 検証: WPT `form-submission-0` 系 vendor、Turbo の submit 介入系
+### N2: form submission の JS API を delegate へ配線 ✅ 実装済み
+- `SubmitEvent`(`submitter` を公開)を新設し、constructor / BASE_CHAINS へ登録
+  (`new SubmitEvent("submit", {submitter})` + `instanceof SubmitEvent` 解決)。
+- `HTMLFormElement#request_submit(submitter)` → cancelable な `SubmitEvent` を発火し、
+  非キャンセルなら `__internal_navigate_for_submit__`。`#submit()` はイベント無しで直行。
+- form data set 構築は `Dommy::Interaction::FormSubmission#submit!` を再利用(名前付き有効
+  コントロール列挙 / submitter の name/value / disabled・unchecked 除外 — B2 部品)。結果の
+  `{method, url, params(順序付き [name,value] 配列), enctype}` を `Window#__internal_navigate__`
+  経由で delegate に渡す(直列化は delegate 責務: GET→query / POST→urlencoded・multipart)。
+- **範囲**: JS フォーム API(`requestSubmit`/`submit`)のみ。submit ボタン click →
+  フォーム submit の click 経路集約(driver の `submit_owning_form` 重複解消)は
+  dommy-rack/capybara の delegate 配線と密結合のため **N4 へ集約**(本 PR では既存
+  click 経路を一切触らず、4スイート green を維持: dommy 3357 / quickjs 596 /
+  dommy-rack 232 / capybara 1259)。
+- 検証: `test_navigation.rb` に N2 4件(requestSubmit が SubmitEvent 発火 + params 付きで
+  navigate、preventDefault で抑止、submit() はイベント無し、非 submit submitter は TypeError)。
+  bridge smoke で `requestSubmit`/`new SubmitEvent`/`e.submitter` を実機確認。
+- 今後: WPT `form-submission-0` 系 vendor、Turbo の submit 介入系(N4 で click 集約後)。
 
 ### N3: cross-document 文書置換(core Browser 実装 = ポート実装②)
 - `Browser#visit(url)` / delegate 実装: resources 取得 → 旧文書 pagehide/unload →
