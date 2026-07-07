@@ -1,7 +1,7 @@
 # Dommy ナビゲーションモデル設計
 
 作成: 2026-07-07 / 更新: 2026-07-08
-ステータス: **N0–N3a 実装済み**(activation + fragment ナビ + HashChangeEvent + form submit JS API + core Browser の cross-document 文書置換/realm swap)。N3b(WPT vendor + iframe 共通化)・N4(dommy-rack/capybara 統合)は未着手
+ステータス: **N0–N3a + N4-1 実装済み**(activation + fragment ナビ + HashChangeEvent + form submit JS API + core Browser の cross-document 文書置換/realm swap + form submission ロジック集約)。N3b(WPT vendor + iframe 共通化)・N4-2(dommy-rack/capybara の delegate 配線)は未着手
 関連: `docs/conformance-roadmap.md`(Phase 3/4 の最大宿題)、`docs/dom-library-comparison.md`、
 実装詳細 `docs/navigation-impl-N0-N1.md`
 
@@ -198,10 +198,25 @@ N0(ポート導入)→ N1(same-doc 完結)→ N2(form submission)→ N3(cross-do
   パイプラインへ寄せる(重複解消)
 - same-origin 強制ポリシー(現状 core Browser は test tool として無制限)/ meta refresh 追従
 
-### N4: dommy-rack / capybara-dommy / dommynx 統合
+### N4-1: form submission ロジックの集約 ✅ 実装済み
+- `HTMLFormElement#__run_form_submission__(submitter)` を新設(cancelable な `SubmitEvent`
+  発火 → 非キャンセルなら delegate へ navigation)。`request_submit` もこれを呼ぶ形にリファクタ。
+- 従来 bare `Event("submit")` を dispatch していた **4 箇所を集約**: core driver の
+  `submit_owning_form` / Enter 暗黙 submit / `Browser#click_button` / capybara `js_submit`。
+  いずれも real `SubmitEvent`(submitter 付き)+ delegate 経由に格上げ。
+- **navigable Browser は submit ボタン click で実ナビゲーション**するようになった
+  (`click_button` → `__run_form_submission__` → delegate)。
+- **二重発火なし**: `EventSynthesis` レベルの activation flip はせず、driver が click 後に明示的に
+  submission を起こす形を維持(capybara の js_submit も同一メソッド経由に置換)。`el.click()`(JS)
+  で submit する完全な activation 化は N4-2 へ。
+- 検証: `test_browser_navigation.rb` に 2 tests(click_button で実ナビ / SubmitEvent submitter)。
+  4スイート green(dommy 3368 / quickjs 598 / dommy-rack 232 / capybara 1259)。
+
+### N4-2: dommy-rack / capybara の delegate 配線(未着手・リスク評価中)
 - dommy-rack `Navigation` をポート実装③にリファクタ(redirect/same-origin/cookie/
-  joint history は既存のまま、入口だけポートへ)
-- capybara-dommy: `click_link` の特殊処理を実クリック(activation behavior 経由)に置換
+  joint history は既存のまま、入口だけポートへ)。SessionRuntime が各 window に delegate を
+  attach、JS 起点ナビ(`location.href=`/`form.submit()`)を deferral で受ける(Browser と同じ機構)。
+- capybara-dommy: `click_link` / `js_submit` の特殊処理を実クリック(activation → delegate)に置換
 - **dommynx(dommy-tui、第4の消費者)**: `App#activate_link` の
   「prevented でも navigated でもなければ href を follow」フォールバック
   (`app.rb:1107` 付近)は core activation behavior の手動再実装なので、delegate ③接続後は
