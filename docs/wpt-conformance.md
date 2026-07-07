@@ -15,7 +15,32 @@ fetch スタブ経由でディスクから配信する) と、`.html` テスト 
 `<script src>` ヘルパーはベンダリングしたツリーから解決する)。synthetic な `load`
 イベントが testharness の完了をどう駆動するかは `WptHarness` を参照。
 
-## スナップショット (2026-07-05、iframe ナビゲーション + nodeValue + D1a の後)
+## スナップショット (2026-07-07、B2 forms/tabular-data/interactive + constraint validation の後)
+
+```
+  FileAPI     256/260   (98.5%)
+  accname     300/303   (99.0%)
+  css        3935/3985  (98.7%)
+  dom       33771/33932 (99.5%)
+  domparsing   98/100   (98.0%)
+  encoding    187/191   (97.9%)
+  fetch       264/286   (92.3%)
+  html       1636/1682  (97.3%)   — 127/151 (84.1%) から分母を 10 倍以上に拡大しつつ 97%台
+  url        1395/1397  (99.9%)
+  wai-aria    387/389   (99.5%)
+  webstorage 1172/1200  (97.7%)
+  xhr         180/199   (90.5%)
+  total     43581/43924 (99.2%)   — 384 ファイル / 319 完全グリーン / 0 errored
+```
+
+> **B2 (html/ コーパス拡大) 第1弾完了**。forms (input/select/option/datalist/output/button/
+> fieldset/textarea/label/meter/progress + constraint validation 672/684)、tabular-data
+> **125/125 全green**、details/dialog/template/title/ol/li。ブリッジに indexed setter /
+> LegacyOverrideBuiltIns / READONLY_ATTRS / イベント this=currentTarget、harness に UTF-8 BOM
+> strip。既知の won't-fix: JS `v`-mode 正規表現 (~11)、webstorage lone surrogate (~24)、
+> reflection.js (D2 まで)、Makiri XML name (66)。
+
+## (旧) スナップショット (2026-07-05、iframe ナビゲーション + nodeValue + D1a の後)
 
 ```
   accname     300/303   (99.0%)

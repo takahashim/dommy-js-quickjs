@@ -32,9 +32,9 @@ export function buildPage(rel) {
   const src = fs.readFileSync(abs, "utf8");
   const testDir = path.dirname(abs);
   if (rel.endsWith(".html") || rel.endsWith(".htm")) {
-    // Inline every <script src="..."> with the resolved source.
-    const inlined = src.replace(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi,
-      (m, spec) => `<script>\n${resolveInclude(spec, testDir)}\n</script>`);
+    // Inline every <script src=...> (quoted or unquoted attr) with the resolved source.
+    const inlined = src.replace(/<script\b[^>]*\bsrc=(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*><\/script>/gi,
+      (m, dq, sq, uq) => `<script>\n${resolveInclude(dq || sq || uq, testDir)}\n</script>`);
     return inlined;
   }
   // .any.js / .window.js: wrap like a WPT harness page.
