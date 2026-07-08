@@ -1,7 +1,7 @@
 # Dommy ナビゲーションモデル設計
 
 作成: 2026-07-07 / 更新: 2026-07-08
-ステータス: **N0–N4-2 実装済み**(activation + fragment ナビ + HashChangeEvent + form submit JS API + core Browser の cross-document 文書置換/realm swap + form submission 集約 + dommy-rack/capybara の delegate 配線で JS 起点ナビ実現)。N3b(WPT vendor + iframe 共通化)は未着手
+ステータス: **N0–N4-2 + N3b(meta refresh / same-origin)実装済み**。JS 起点ナビ end-to-end、meta refresh、opt-in same-origin まで完了。残: WPT vendor(upstream 取得待ち)。iframe パイプライン共通化はスコープアウト(下記理由)
 関連: `docs/conformance-roadmap.md`(Phase 3/4 の最大宿題)、`docs/dom-library-comparison.md`、
 実装詳細 `docs/navigation-impl-N0-N1.md`
 
@@ -191,12 +191,20 @@ N0(ポート導入)→ N1(same-doc 完結)→ N2(form submission)→ N3(cross-do
   `location.href=` の遅延フラッシュ・旧 realm グローバル非漏洩)。4スイート green
   (dommy 3368 / quickjs 598 / dommy-rack 232 / capybara 1259)。
 
-### N3b: WPT vendor + iframe パイプライン共通化(未着手)
-- **WPT `html/browsers/history/the-history-interface`・`the-location-interface`・
-  `history-traversal` の自己完結分を vendor**(jsdom も弱い領域: 期待失敗 27〜60/dir)
-- WptRunner の iframe 手動 fetch→parse→contentDocument→load 置換ロジックを N3a の
-  パイプラインへ寄せる(重複解消)
-- same-origin 強制ポリシー(現状 core Browser は test tool として無制限)/ meta refresh 追従
+### N3b: meta refresh + same-origin ✅ / WPT vendor(保留)・iframe(スコープアウト)
+- **meta refresh ✅**: 新文書の `<meta http-equiv=refresh content="0;url=…">` を追従
+  (replace 扱い、自己 refresh ループは `MAX_META_REFRESHES` で cap)。dommy-rack は既存対応済み
+  だったので core Browser 側の穴を埋めた形。
+- **same-origin ✅(opt-in)**: `Browser.visit(..., same_origin: true)` で最初のオリジンに navigation
+  をスコープ。別 scheme/host/port への遷移・**redirect** を block(stay)。permissive な resources
+  adapter 経由で core Fetcher が cross-origin redirect を追従してしまう穴を解消(dommy-rack と対称)。
+- **WPT vendor(保留)**: `the-location-interface`・`history-traversal` の自己完結分。ローカルに
+  WPT checkout が無く、upstream 取得方法の決定待ち。
+- **iframe パイプライン共通化(スコープアウト)**: 精査の結果、iframe は「既存 realm 内にサブフレーム
+  文書ロード + `expose_constructors_on`」で、realm を作り直す N3a の top-level パイプラインとは別物。
+  WptRunner の `wire_iframes` は WPT 固有処理(srcdoc / XML・XHTML / best-effort / pump 中 re-wire)を
+  含み、core Browser は iframe 未対応。「重複解消」ではなく WPT のために core へ iframe 新規実装する
+  話で、245 ファイルの load-bearing コードに対しリスク>価値のため見送り。
 
 ### N4-1: form submission ロジックの集約 ✅ 実装済み
 - `HTMLFormElement#__run_form_submission__(submitter)` を新設(cancelable な `SubmitEvent`
