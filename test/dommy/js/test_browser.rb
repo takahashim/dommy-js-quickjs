@@ -312,4 +312,28 @@ class Dommy::Js::TestBrowser < Minitest::Test
       assert_equal 1, b.evaluate("window.__bodyclick"), "<body onclick> stays on the body"
     end
   end
+
+  # --- window event handler IDL attributes (window.onload = fn, …) ---
+
+  def test_window_event_handler_idl_attributes
+    Dommy::Browser.open("<html><body><script>window.onload = () => { window.__wl = 1 }</script></body></html>") do |b|
+      assert_equal 1, b.evaluate("window.__wl"), "window.onload = fn fires on load"
+      assert_equal "function", b.evaluate("typeof window.onload"), "it reads back as the handler"
+    end
+
+    Dommy::Browser.open("<html><body></body></html>") do |b|
+      # A registered handler fires; setting it to null removes it; reassigning
+      # replaces rather than accumulates.
+      b.execute("window.__n = 0; window.onresize = () => { window.__n++ }; dispatchEvent(new Event('resize'))")
+      assert_equal 1, b.evaluate("window.__n")
+      b.execute("window.onresize = null; dispatchEvent(new Event('resize'))")
+      assert_equal 1, b.evaluate("window.__n"), "null removes the handler"
+      assert_nil b.evaluate("window.onresize"), "an unset handler reads back as null"
+
+      # A non-handler on-prefixed global stays a plain expando (not an event
+      # handler), so it round-trips unchanged.
+      b.execute("window.onboarding = { step: 3 }")
+      assert_equal 3, b.evaluate("window.onboarding.step")
+    end
+  end
 end
