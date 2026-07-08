@@ -301,4 +301,15 @@ class Dommy::Js::TestBrowser < Minitest::Test
         "the compiled handler is readable as the onclick IDL property"
     end
   end
+
+  def test_body_onload_inline_handler_reflects_to_the_window
+    html = '<html><body onload="window.__loaded = 1" onclick="window.__bodyclick = 1">x</body></html>'
+    Dommy::Browser.open(html) do |b|
+      # onload on <body> is a window-reflected handler: it fires on window load.
+      assert_equal 1, b.evaluate("window.__loaded"), "<body onload> fires"
+      # A non-reflected handler (onclick) stays on the body element.
+      b.execute("document.body.click()")
+      assert_equal 1, b.evaluate("window.__bodyclick"), "<body onclick> stays on the body"
+    end
+  end
 end

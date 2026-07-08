@@ -43,6 +43,8 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
           <input type="hidden" name="_method" value="delete">
         </form></body></html>
       HTML
+    when "/loop"
+      [302, {"content-type" => "text/html", "Location" => "/loop"}, [""]]
     when "/nav"
       [200, {"content-type" => "text/html"}, [<<~HTML]]
         <html><body>
@@ -217,6 +219,16 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     @session.click("#inlinenav")
     assert_match(%r{/target\z}, @session.current_url)
     assert @session.has_css?("#target")
+  end
+
+  def test_js_navigation_into_a_redirect_loop_does_not_crash_the_drain
+    @session = session
+    @session.visit("/")
+    # A page-initiated navigation that loops on redirects is dropped, not fatal
+    # (a Ruby-driven visit would raise; the deferred delegate path must not).
+    @session.execute_script("location.href = '/loop'")
+    @session.settle
+    assert_match(%r{example\.org/\z}, @session.current_url, "stayed on the current page")
   end
 
   def test_location_replace_overwrites_the_current_history_entry
