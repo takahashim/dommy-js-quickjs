@@ -272,4 +272,33 @@ class Dommy::Js::TestBrowser < Minitest::Test
   ensure
     b&.dispose
   end
+
+  # --- inline event-handler content attributes (onclick="…", …) ---
+
+  def test_inline_event_handler_attributes_fire
+    html = <<~HTML
+      <html><body>
+        <button id="c" onclick="window.__n = (window.__n || 0) + 1">c</button>
+        <button id="t" onclick="this.setAttribute('data-hit', '1')">t</button>
+        <form id="f" onsubmit="window.__sub = 1; event.preventDefault()">
+          <button type="submit">s</button>
+        </form>
+      </body></html>
+    HTML
+    Dommy::Browser.open(html) do |b|
+      b.execute("document.getElementById('c').click()")
+      b.execute("document.getElementById('c').click()")
+      assert_equal 2, b.evaluate("window.__n"), "onclick fires on each click"
+
+      b.execute("document.getElementById('t').click()")
+      assert_equal "1", b.evaluate("document.getElementById('t').getAttribute('data-hit')"),
+        "`this` inside the handler is the element"
+
+      b.execute("document.getElementById('f').requestSubmit()")
+      assert_equal 1, b.evaluate("window.__sub"), "`event` is in scope and preventDefault works"
+
+      assert_equal "function", b.evaluate("typeof document.getElementById('c').onclick"),
+        "the compiled handler is readable as the onclick IDL property"
+    end
+  end
 end

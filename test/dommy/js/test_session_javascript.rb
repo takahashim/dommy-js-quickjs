@@ -52,6 +52,7 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
             <button id="sub" type="submit">submit</button>
           </form>
           <button id="jsloc">jsloc</button>
+          <button id="inlinenav" onclick="window.location = '/target'">inline</button>
         </body></html>
       HTML
     else
@@ -204,6 +205,16 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
       "document.getElementById('jsloc').addEventListener('click', () => { window.location = '/target'; })"
     )
     @session.click("#jsloc")
+    assert_match(%r{/target\z}, @session.current_url)
+    assert @session.has_css?("#target")
+  end
+
+  def test_inline_onclick_handler_navigates
+    @session = session
+    @session.visit("/nav")
+    # <button onclick="window.location = '/target'"> — inline handler compiled at
+    # boot, its navigation performed by the delegate.
+    @session.click("#inlinenav")
     assert_match(%r{/target\z}, @session.current_url)
     assert @session.has_css?("#target")
   end
