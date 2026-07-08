@@ -302,6 +302,39 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  def test_inline_handler_lexical_scope
+    # An inline handler resolves bare names against [element, form owner,
+    # document] before the global (the HTML "compile" scope chain).
+    html = <<~HTML
+      <html><body>
+        <table><tr><td id="c" onclick="window.__el = typeof cellIndex; window.__doc = typeof getElementById">x</td></tr></table>
+        <form id="f"><input id="i" onclick="window.__form = typeof elements"></form>
+      </body></html>
+    HTML
+    Dommy::Browser.open(html) do |b|
+      b.execute("document.getElementById('c').click()")
+      assert_equal "number", b.evaluate("window.__el"), "element member (cellIndex) is in scope"
+      assert_equal "function", b.evaluate("window.__doc"), "document member (getElementById) is in scope"
+
+      b.execute("document.getElementById('i').click()")
+      assert_equal "object", b.evaluate("window.__form"), "form-owner member (elements) is in scope"
+    end
+  end
+
+  def test_inline_handler_return_false_cancels
+    html = '<html><body><form id="f" onsubmit="return false"><button type="submit">go</button></form></body></html>'
+    Dommy::Browser.open(html) do |b|
+      prevented = b.evaluate(<<~JS)
+        (() => {
+          const e = new SubmitEvent("submit", { cancelable: true, bubbles: true });
+          document.getElementById("f").dispatchEvent(e);
+          return e.defaultPrevented;
+        })()
+      JS
+      assert_equal true, prevented, 'onsubmit="return false" cancels the event'
+    end
+  end
+
   def test_body_onload_inline_handler_reflects_to_the_window
     html = '<html><body onload="window.__loaded = 1" onclick="window.__bodyclick = 1">x</body></html>'
     Dommy::Browser.open(html) do |b|
