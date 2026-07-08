@@ -1,7 +1,7 @@
 # Dommy ナビゲーションモデル設計
 
 作成: 2026-07-07 / 更新: 2026-07-08
-ステータス: **N0–N3a + N4-1 実装済み**(activation + fragment ナビ + HashChangeEvent + form submit JS API + core Browser の cross-document 文書置換/realm swap + form submission ロジック集約)。N3b(WPT vendor + iframe 共通化)・N4-2(dommy-rack/capybara の delegate 配線)は未着手
+ステータス: **N0–N4-2 実装済み**(activation + fragment ナビ + HashChangeEvent + form submit JS API + core Browser の cross-document 文書置換/realm swap + form submission 集約 + dommy-rack/capybara の delegate 配線で JS 起点ナビ実現)。N3b(WPT vendor + iframe 共通化)は未着手
 関連: `docs/conformance-roadmap.md`(Phase 3/4 の最大宿題)、`docs/dom-library-comparison.md`、
 実装詳細 `docs/navigation-impl-N0-N1.md`
 
@@ -212,11 +212,27 @@ N0(ポート導入)→ N1(same-doc 完結)→ N2(form submission)→ N3(cross-do
 - 検証: `test_browser_navigation.rb` に 2 tests(click_button で実ナビ / SubmitEvent submitter)。
   4スイート green(dommy 3368 / quickjs 598 / dommy-rack 232 / capybara 1259)。
 
-### N4-2: dommy-rack / capybara の delegate 配線(未着手・リスク評価中)
-- dommy-rack `Navigation` をポート実装③にリファクタ(redirect/same-origin/cookie/
-  joint history は既存のまま、入口だけポートへ)。SessionRuntime が各 window に delegate を
-  attach、JS 起点ナビ(`location.href=`/`form.submit()`)を deferral で受ける(Browser と同じ機構)。
-- capybara-dommy: `click_link` / `js_submit` の特殊処理を実クリック(activation → delegate)に置換
+### N4-2: dommy-rack / capybara の delegate 配線 ✅ 実装済み
+- **確認済みの gap**: 実 quickjs で dommy-rack は JS 起点ナビ(`location.href=` /
+  `window.location=` / `form.submit()`)を辿れていなかった(window は NullDelegate、記録のみ)。
+  `onchange="this.form.submit()"` 等 Rails/capybara 頻出パターンが動かない実欠陥だった。
+- **A(dommy core)**: submit ボタンに `SubmitButtonActivation`(activation_target? +
+  activation_behavior → 所有 form の `__run_form_submission__`)。これで `EventSynthesis.click` /
+  `el.click()`(JS)が submit ボタンで送信を起こす。core driver の `submit_owning_form` /
+  `Browser#click_button` の明示 submit を削除(activation に一本化)。`window.location = url`
+  setter も追加([PutForwards=href])。
+- **B(dommy-rack)**: `PageNavigationDelegate`(window に束縛)を SessionRuntime が各 window に
+  attach。Session は `__enqueue_page_navigation__`(stale window ガード)に記録し、drain 境界
+  (`after_interaction` / `settle`)で `__flush_page_navigation__` → `perform_page_navigation`
+  (scheme ガード javascript:/mailto:/data: skip、同一ページ fragment skip、`@navigation.navigate`
+  で redirect/same-origin/cookie 既存ロジック再利用)。**ナビはタスク**の deferral は Browser と同機構。
+- **C(capybara)**: `js_click` の link/submit 分岐と `js_submit` を削除(activation → delegate が
+  処理、drain で実行)。非 JS 経路は従来通り(delegate 無し)。
+- 検証: quickjs `test_session_javascript.rb` に**実 quickjs**統合 6 tests(location.href= /
+  window.location= / form.submit() / click link / click submit / click handler が location 設定
+  → いずれも実ナビ)。既存スイートは NullRuntime のため gap 未カバーだった箇所を実ランタイムで担保。
+  4スイート green(dommy 3370 / quickjs 604 / dommy-rack 232 / capybara 1259)。
+- 既知の別 gap(スコープ外): インライン `onclick=` 属性ハンドラは未サポート(addEventListener は動作)。
 - **dommynx(dommy-tui、第4の消費者)**: `App#activate_link` の
   「prevented でも navigated でもなければ href を follow」フォールバック
   (`app.rb:1107` 付近)は core activation behavior の手動再実装なので、delegate ③接続後は

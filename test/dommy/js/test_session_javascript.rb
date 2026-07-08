@@ -33,6 +33,19 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     when "/onload"
       [200, {"content-type" => "text/html"},
        ['<html><body><script>setTimeout(() => { window.__t = "fired"; }, 0);</script></body></html>']]
+    when "/target"
+      [200, {"content-type" => "text/html"}, ["<html><body><h1 id='target'>TARGET</h1></body></html>"]]
+    when "/nav"
+      [200, {"content-type" => "text/html"}, [<<~HTML]]
+        <html><body>
+          <a id="lnk" href="/target">link</a>
+          <form id="frm" action="/target" method="get">
+            <input type="hidden" name="x" value="1">
+            <button id="sub" type="submit">submit</button>
+          </form>
+          <button id="jsloc">jsloc</button>
+        </body></html>
+      HTML
     else
       [200, {"content-type" => "text/html"}, [<<~HTML]]
         <html><head><meta name="csrf-token" content="tok123"></head>
@@ -123,6 +136,68 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     plain = Dommy::Rack::Session.new(APP)
     err = assert_raises(Dommy::Rack::Error) { plain.execute_script("1") }
     assert_includes err.message, "javascript: true"
+  end
+
+  # --- N4-2: page-initiated navigation routes through the delegate ---
+
+  # These exercise the real JS runtime (the suite otherwise leans on NullRuntime),
+  # so they cover the seam that lets a page navigate itself: location.href= /
+  # window.location= / form.submit() reach the session and load a new document.
+
+  def test_js_location_href_navigates
+    @session = session
+    @session.visit("/nav")
+    @session.execute_script("location.href = '/target'")
+    @session.settle
+    assert_match(%r{/target\z}, @session.current_url)
+    assert @session.has_css?("#target"), "the new document loaded"
+  end
+
+  def test_js_window_location_string_navigates
+    @session = session
+    @session.visit("/nav")
+    @session.execute_script("window.location = '/target'")
+    @session.settle
+    assert_match(%r{/target\z}, @session.current_url)
+    assert @session.has_css?("#target")
+  end
+
+  def test_js_form_submit_navigates_with_query
+    @session = session
+    @session.visit("/nav")
+    @session.execute_script("document.getElementById('frm').submit()")
+    @session.settle
+    assert_match(%r{/target\?x=1\z}, @session.current_url)
+    assert @session.has_css?("#target")
+  end
+
+  def test_click_link_navigates_via_activation
+    @session = session
+    @session.visit("/nav")
+    @session.click("#lnk")
+    assert_match(%r{/target\z}, @session.current_url)
+    assert @session.has_css?("#target")
+  end
+
+  def test_click_submit_button_navigates_via_activation
+    @session = session
+    @session.visit("/nav")
+    @session.click("#sub")
+    assert_match(%r{/target\?x=1\z}, @session.current_url)
+    assert @session.has_css?("#target")
+  end
+
+  def test_click_handler_that_sets_location_navigates
+    @session = session
+    @session.visit("/nav")
+    # A JS click handler that navigates programmatically (a common pattern) —
+    # the deferred delegate performs it after the handler returns.
+    @session.execute_script(
+      "document.getElementById('jsloc').addEventListener('click', () => { window.location = '/target'; })"
+    )
+    @session.click("#jsloc")
+    assert_match(%r{/target\z}, @session.current_url)
+    assert @session.has_css?("#target")
   end
 
   # --- Off-thread network: an injected executor defers fetch to a worker ---
