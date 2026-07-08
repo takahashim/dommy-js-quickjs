@@ -35,6 +35,14 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
        ['<html><body><script>setTimeout(() => { window.__t = "fired"; }, 0);</script></body></html>']]
     when "/target"
       [200, {"content-type" => "text/html"}, ["<html><body><h1 id='target'>TARGET</h1></body></html>"]]
+    when "/echo"
+      [200, {"content-type" => "text/html"}, ["<html><body><h1 id='m'>#{env["REQUEST_METHOD"]}</h1></body></html>"]]
+    when "/delform"
+      [200, {"content-type" => "text/html"}, [<<~HTML]]
+        <html><body><form id="df" action="/echo" method="post">
+          <input type="hidden" name="_method" value="delete">
+        </form></body></html>
+      HTML
     when "/nav"
       [200, {"content-type" => "text/html"}, [<<~HTML]]
         <html><body>
@@ -198,6 +206,30 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     @session.click("#jsloc")
     assert_match(%r{/target\z}, @session.current_url)
     assert @session.has_css?("#target")
+  end
+
+  def test_location_replace_overwrites_the_current_history_entry
+    @session = session
+    @session.visit("/")
+    @session.execute_script("location.assign('/nav')")
+    @session.settle
+    @session.execute_script("location.replace('/target')")
+    @session.settle
+
+    assert_match(%r{/target\z}, @session.current_url)
+    # /nav was replaced by /target, so back returns to "/", not /nav.
+    @session.back
+    assert_match(%r{example\.org/\z}, @session.current_url)
+  end
+
+  def test_form_method_override_applies_on_the_delegate_path
+    @session = session
+    @session.visit("/delform")
+    @session.execute_script("document.getElementById('df').submit()")
+    @session.settle
+    # POST + hidden _method=delete becomes a real DELETE (the session applies
+    # the override, so it works even without Rack::MethodOverride in the app).
+    assert_equal "DELETE", @session.find("#m").text_content
   end
 
   # --- Off-thread network: an injected executor defers fetch to a worker ---
