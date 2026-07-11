@@ -21,10 +21,10 @@ if File.directory?(dommy_gems)
   gem "capybara-dommy", path: "#{dommy_gems}/capybara-dommy"
   gem "dommy-rack", path: "#{dommy_gems}/dommy-rack"
 
-  # Optional alternative DOM backend (Lexbor-based), for running the suite with
-  # DOMMY_BACKEND=makiri. Unpublished; only wired up in the monorepo.
-  makiri = File.expand_path("../makiri", __dir__)
-  gem "makiri", path: makiri if File.directory?(makiri)
+  # DOM parser backend (Lexbor-based) — a dependency of dommy, resolved from
+  # RubyGems (>= 0.7.0). For makiri development, uncomment the path override to
+  # test a local sibling checkout against this suite.
+  # gem "makiri", path: File.expand_path("../makiri", __dir__)
 else
   gem "dommy"
 end
