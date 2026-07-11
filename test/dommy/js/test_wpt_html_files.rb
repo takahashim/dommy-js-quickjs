@@ -43,13 +43,7 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/aria-attribute-reflection.html" => { min_pass: 41, expected: [] },
-    "html/dom/aria-element-reflection.html" => {
-      min_pass: 26,
-      # Remaining: cross-document adoptNode only reseats the top wrapper, so a
-      # descendant referenced by an adopted element's aria ref stays in the old
-      # document and reads as out-of-scope (a general adoption limitation).
-      expected: ["Adopting element keeps references."]
-    },
+    "html/dom/aria-element-reflection.html" => { min_pass: 27, expected: [] },
     "html/dom/aria-element-reflection-disconnected.html" => {
       min_pass: 1,
       # Element-reference reflection across disconnection (FrozenArray caching)
