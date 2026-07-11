@@ -119,6 +119,16 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/getElementsByClassName-02.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Node-nodeValue.html" => { min_pass: 7, expected: [] },
+    "dom/nodes/Node-isConnected.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Element-closest.html" => {
+      min_pass: 27,
+      # Remaining selector-engine edges: the :invalid form-validity pseudo, and
+      # :scope nested inside :has().
+      expected: [
+        "Element.closest with context node 'test11' and selector ':invalid'",
+        "Element.closest with context node 'test4' and selector ':has(> :scope)'"
+      ]
+    },
     "dom/nodes/Element-removeAttributeNS.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-setAttribute-crbug-1138487.html" => { min_pass: 1, expected: [] },
     "dom/nodes/attributes.html" => { min_pass: 67, expected: [] },
