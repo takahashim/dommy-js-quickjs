@@ -126,21 +126,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       # navigation work notes).
       expected: ["Removed iframe"]
     },
-    "dom/nodes/Node-cloneNode.html" => {
-      min_pass: 119,
-      # cloneNode of elements whose dedicated interface Dommy doesn't model as a
-      # distinct class (canvas/col/datalist/fieldset/…), plus createElementNS and
-      # XML-document factories (createProcessingInstruction / createDocument).
-      expected: [
-        "createElement(canvas)", "createElement(col)", "createElement(colgroup)",
-        "createElement(datalist)", "createElement(dir)", "createElement(dl)",
-        "createElement(fieldset)", "createElement(font)", "createElement(frame)",
-        "createElement(frameset)", "createElement(param)",
-        "createElementNS HTML", "createElementNS non-HTML",
-        "createProcessingInstruction",
-        "implementation.createDocumentType", "implementation.createDocument"
-      ]
-    },
+    "dom/nodes/Node-cloneNode.html" => { min_pass: 135, expected: [] },
     "dom/nodes/Node-contains.html" => { min_pass: 1482, expected: [] },
     "dom/nodes/Node-isEqualNode.html" => { min_pass: 9, expected: [] },
     "dom/nodes/Node-isSameNode.html" => {
