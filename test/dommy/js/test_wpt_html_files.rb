@@ -7,8 +7,8 @@ require_relative "../../support/wpt_conformance"
 # (pushState / replaceState), accessKeyLabel, and ARIA attribute reflection —
 # the well-supported corners of the HTML suite.
 #
-# Omitted: aria-element-reflection (element-reference reflection is largely
-# shadow-DOM-scoped, out of scope) and XML/foreign-document corners.
+# Omitted: XML/foreign-document corners. (ARIA element-reference reflection —
+# including shadow-DOM valid-scope validation — is now supported.)
 class Dommy::Js::TestWptHtmlFiles < Minitest::Test
   include Dommy::Js::WptConformance
 
@@ -43,6 +43,18 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/aria-attribute-reflection.html" => { min_pass: 41, expected: [] },
+    "html/dom/aria-element-reflection.html" => {
+      min_pass: 23,
+      # Remaining: [SameObject] FrozenArray caching for plural element references
+      # (the bridge materializes a fresh JS array per read, so identity isn't
+      # stable) and cross-document adoption carrying explicit refs.
+      expected: [
+        "aria-labelledby.",
+        "Adopting element keeps references.",
+        "Caching invariant different attributes.",
+        "Caching invariant different elements."
+      ]
+    },
     "html/dom/aria-element-reflection-disconnected.html" => {
       min_pass: 1,
       # Element-reference reflection across disconnection (FrozenArray caching)
