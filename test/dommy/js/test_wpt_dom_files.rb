@@ -118,6 +118,9 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/getElementsByClassName-01.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/getElementsByClassName-02.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/Node-nodeValue.html" => { min_pass: 7, expected: [] },
+    "dom/nodes/Element-removeAttributeNS.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Element-setAttribute-crbug-1138487.html" => { min_pass: 1, expected: [] },
     "dom/nodes/attributes.html" => { min_pass: 67, expected: [] },
     "dom/nodes/Node-parentNode.html" => {
       min_pass: 4,
