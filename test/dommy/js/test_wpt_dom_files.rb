@@ -120,6 +120,9 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Node-nodeValue.html" => { min_pass: 7, expected: [] },
     "dom/nodes/Node-isConnected.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Element-siblingElement-null.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/Element-childElement-null.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/getElementsByClassName-32.html" => { min_pass: 4, expected: [] },
     "dom/nodes/Element-closest.html" => {
       min_pass: 27,
       # Remaining selector-engine edges: the :invalid form-validity pseudo, and
