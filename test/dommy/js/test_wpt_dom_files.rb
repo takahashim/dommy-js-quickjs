@@ -123,6 +123,13 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/getElementsByClassName-01.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/getElementsByClassName-02.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/Node-parentNode.html" => {
+      min_pass: 4,
+      # A node in a removed iframe's document — iframe subframe lifecycle is out
+      # of scope (the iframe pipeline is deliberately not unified; see the
+      # navigation work notes).
+      expected: ["Removed iframe"]
+    },
     "dom/nodes/Node-cloneNode.html" => {
       min_pass: 119,
       # cloneNode of elements whose dedicated interface Dommy doesn't model as a
