@@ -123,6 +123,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/getElementsByClassName-01.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/getElementsByClassName-02.htm" => { min_pass: 1, expected: [] },
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/attributes.html" => { min_pass: 67, expected: [] },
     "dom/nodes/Node-parentNode.html" => {
       min_pass: 4,
       # A node in a removed iframe's document — iframe subframe lifecycle is out
