@@ -19,11 +19,6 @@ require_relative "../../support/wpt_conformance"
 class Dommy::Js::TestWptDomFiles < Minitest::Test
   include Dommy::Js::WptConformance
 
-  # foreign (XML/XHTML) document ranges and XML processing-instruction points
-  # are out of scope (HTML-only), so a few range subtests are expected to fail.
-  FOREIGN_RANGE = ->(name) { name.include?("foreignDoc") || name.include?("xmlDoc") }
-  XML_PI_POINT = ->(name) { name.include?("processingInstruction") }
-
   wpt_files(
     # --- abort -----------------------------------------------------------
     "dom/abort/AbortSignal.any.js" => { min_pass: 2, expected: [] },
@@ -172,9 +167,9 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/ranges/Range-cloneRange.html" => { min_pass: 62, expected: [] },
     "dom/ranges/Range-collapse.html" => { min_pass: 186, expected: [] },
     "dom/ranges/Range-comparePoint.html" => { min_pass: 5580, expected: [], heavy: true },
-    "dom/ranges/Range-compareBoundaryPoints.html" => { min_pass: 9305, expected: FOREIGN_RANGE, heavy: true },
+    "dom/ranges/Range-compareBoundaryPoints.html" => { min_pass: 9313, expected: [], heavy: true },
     "dom/ranges/Range-intersectsNode.html" => { min_pass: 2356, expected: [] },
-    "dom/ranges/Range-isPointInRange.html" => { min_pass: 5731, expected: XML_PI_POINT, heavy: true },
+    "dom/ranges/Range-isPointInRange.html" => { min_pass: 5733, expected: [], heavy: true },
     "dom/ranges/Range-commonAncestorContainer.html" => {
       min_pass: 61,
       expected: [
