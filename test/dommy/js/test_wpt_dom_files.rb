@@ -173,6 +173,16 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # CharacterData: offsets/counts are WebIDL unsigned long (ToUint32 wrap) and
+    # measured in UTF-16 code units (astral chars count as 2); null coerces to
+    # "null"; substringData/appendData enforce their required-argument arity.
+    "dom/nodes/CharacterData-data.html" => { min_pass: 16, expected: [] },
+    "dom/nodes/CharacterData-appendData.html" => { min_pass: 14, expected: [] },
+    "dom/nodes/CharacterData-insertData.html" => { min_pass: 18, expected: [] },
+    "dom/nodes/CharacterData-deleteData.html" => { min_pass: 18, expected: [] },
+    "dom/nodes/CharacterData-replaceData.html" => { min_pass: 34, expected: [] },
+    "dom/nodes/CharacterData-substringData.html" => { min_pass: 28, expected: [] },
+    "dom/nodes/Text-splitText.html" => { min_pass: 6, expected: [] },
     # normalize() now merges adjacent Text descendants (preserving the first
     # node's identity) recursively on DocumentFragment too, not just Element.
     "dom/nodes/Node-normalize.html" => { min_pass: 4, expected: [] },
