@@ -150,43 +150,17 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/ChildNode-before.html" => { min_pass: 45, expected: [] },
     "dom/nodes/ChildNode-after.html" => { min_pass: 45, expected: [] },
     "dom/nodes/ChildNode-replaceWith.html" => { min_pass: 33, expected: [] },
-    # ParentNode append/prepend/replaceChildren: node insertion + union coercion
-    # pass. The remaining failures are all the Document-level pre-insertion
-    # hierarchy constraints (Text/multiple-element/doctype into a document),
-    # which ParentNode doesn't yet enforce for the document parent.
-    "dom/nodes/ParentNode-append.html" => {
-      min_pass: 18,
-      expected: [
-        "If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.",
-        "If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.",
-        "If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.",
-        "If node is a DocumentFragment with an element and parent is a document with another element, then throw a HierarchyRequestError DOMException.",
-        "If node is an Element and parent is a document with another element, then throw a HierarchyRequestError DOMException.",
-        "If node is a doctype and parent is a document with another doctype, then throw a HierarchyRequestError DOMException.",
-        "If node is a doctype and parent is a document with an element, then throw a HierarchyRequestError DOMException."
-      ]
-    },
-    "dom/nodes/ParentNode-prepend.html" => {
-      min_pass: 16,
-      expected: [
-        "If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.",
-        "If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.",
-        "If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.",
-        "If node is a DocumentFragment with an element and parent is a document with another element, then throw a HierarchyRequestError DOMException.",
-        "If node is an Element and parent is a document with another element, then throw a HierarchyRequestError DOMException.",
-        "If node is a doctype and parent is a document with another doctype, then throw a HierarchyRequestError DOMException."
-      ]
-    },
+    # ParentNode append/prepend/replaceChildren, including the WHATWG step-6
+    # Document-parent pre-insertion hierarchy constraints (single element, no
+    # text, doctype placement) enforced in Document#ensure_document_insertion_validity!.
+    "dom/nodes/ParentNode-append.html" => { min_pass: 25, expected: [] },
+    "dom/nodes/ParentNode-prepend.html" => { min_pass: 22, expected: [] },
     "dom/nodes/ParentNode-replaceChildren.html" => {
-      min_pass: 25,
-      expected: [
-        "If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.",
-        "If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.",
-        "If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.",
-        "Document.replaceChildren() with a doctype, replacing an existing doctype and element.",
-        "Document.replaceChildren() with two elements throws a HierarchyRequestError.",
-        "Document.replaceChildren() with text throws a HierarchyRequestError."
-      ]
+      min_pass: 30,
+      # A cloned doctype re-inserted via replaceChildren gets a fresh wrapper
+      # rather than the passed-in one (DocumentType wrapper-identity gap), so
+      # the assert_array_equals identity check fails.
+      expected: ["Document.replaceChildren() with a doctype, replacing an existing doctype and element."]
     },
     "dom/nodes/Node-cloneNode.html" => { min_pass: 135, expected: [] },
     "dom/nodes/Node-contains.html" => { min_pass: 1482, expected: [] },
