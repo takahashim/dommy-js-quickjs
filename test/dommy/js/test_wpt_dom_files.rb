@@ -120,7 +120,6 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/Node-childNodes.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Node-nodeValue.html" => { min_pass: 7, expected: [] },
     "dom/nodes/Node-isConnected.html" => { min_pass: 2, expected: [] },
-    "dom/nodes/Element-siblingElement-null.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-childElement-null.html" => { min_pass: 1, expected: [] },
     "dom/nodes/getElementsByClassName-32.html" => { min_pass: 4, expected: [] },
     "dom/nodes/Element-closest.html" => {
@@ -173,6 +172,17 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # the reference-child==new-child anchor advance, and cross-document doctype
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
+    "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # adoptNode: rejecting a Document (NotSupportedError) works; the two failures
+    # are elements with XML-invalid names (`x<`, `:good:times:`) being adopted
+    # into an XML document, which Makiri's XML backend rejects (name strictness).
+    "dom/nodes/Document-adoptNode.html" => {
+      min_pass: 2,
+      expected: [
+        "Adopting an Element called 'x<' should work.",
+        "Adopting an Element called ':good:times:' should work."
+      ]
+    },
     "dom/nodes/Node-cloneNode.html" => { min_pass: 135, expected: [] },
     "dom/nodes/Node-contains.html" => { min_pass: 1482, expected: [] },
     "dom/nodes/Node-isEqualNode.html" => { min_pass: 9, expected: [] },
