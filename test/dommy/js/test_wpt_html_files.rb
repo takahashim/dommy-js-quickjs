@@ -44,16 +44,11 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/aria-attribute-reflection.html" => { min_pass: 41, expected: [] },
     "html/dom/aria-element-reflection.html" => {
-      min_pass: 23,
-      # Remaining: [SameObject] FrozenArray caching for plural element references
-      # (the bridge materializes a fresh JS array per read, so identity isn't
-      # stable) and cross-document adoption carrying explicit refs.
-      expected: [
-        "aria-labelledby.",
-        "Adopting element keeps references.",
-        "Caching invariant different attributes.",
-        "Caching invariant different elements."
-      ]
+      min_pass: 26,
+      # Remaining: cross-document adoptNode only reseats the top wrapper, so a
+      # descendant referenced by an adopted element's aria ref stays in the old
+      # document and reads as out-of-scope (a general adoption limitation).
+      expected: ["Adopting element keeps references."]
     },
     "html/dom/aria-element-reflection-disconnected.html" => {
       min_pass: 1,
