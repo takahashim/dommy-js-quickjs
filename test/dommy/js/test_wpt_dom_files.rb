@@ -176,6 +176,12 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoptNode updates an element's attributes' ownerDocument too (Attr derives
     # ownerDocument/baseURI from its owner element's current document).
     "dom/nodes/Node-mutation-adoptNode.html" => { min_pass: 2, expected: [] },
+    # createHTMLDocument(null) titles the document "null"; undefined/missing leaves
+    # it title-less. The URL-parsing case needs a browsing context (no-view doc).
+    "dom/nodes/DOMImplementation-createHTMLDocument.html" => {
+      min_pass: 12,
+      expected: ["createHTMLDocument(): URL parsing"]
+    },
     "dom/nodes/Element-setAttribute.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Element-removeAttribute.html" => { min_pass: 2, expected: [] },
     # matches(null)/getElementById(null) coerce null to "null"; insertAdjacent*
