@@ -42,6 +42,13 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
 
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
+    "html/dom/documents/dom-tree-accessors/document.title-01.html" => { min_pass: 4, expected: [] },
+    "html/dom/documents/dom-tree-accessors/nameditem-01.html" => {
+      min_pass: 6,
+      # document named-access doesn't live-update when an element's name attribute
+      # changes (a stale name still resolves).
+      expected: ["Dynamically updating the name attribute from img elements, should be accessible by values."]
+    },
     "html/dom/aria-attribute-reflection.html" => { min_pass: 41, expected: [] },
     "html/dom/aria-element-reflection.html" => { min_pass: 27, expected: [] },
     "html/dom/aria-element-reflection-disconnected.html" => {
