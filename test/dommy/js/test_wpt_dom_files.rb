@@ -173,6 +173,9 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # DocumentFragment parent yields null (on Text/Comment and Fragment too).
     "dom/nodes/Node-parentElement.html" => { min_pass: 12, expected: [] },
     "dom/nodes/DocumentType-remove.html" => { min_pass: 4, expected: [] },
+    # adoptNode updates an element's attributes' ownerDocument too (Attr derives
+    # ownerDocument/baseURI from its owner element's current document).
+    "dom/nodes/Node-mutation-adoptNode.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Element-setAttribute.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Element-removeAttribute.html" => { min_pass: 2, expected: [] },
     # matches(null)/getElementById(null) coerce null to "null"; insertAdjacent*
@@ -286,6 +289,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/ranges/Range-cloneRange.html" => { min_pass: 62, expected: [] },
     "dom/ranges/Range-collapse.html" => { min_pass: 186, expected: [] },
     "dom/ranges/Range-comparePoint.html" => { min_pass: 5580, expected: [], heavy: true },
+    "dom/ranges/Range-comparePoint-2.html" => { min_pass: 3, expected: [] },
     "dom/ranges/Range-compareBoundaryPoints.html" => { min_pass: 9313, expected: [], heavy: true },
     "dom/ranges/Range-intersectsNode.html" => { min_pass: 2356, expected: [] },
     "dom/ranges/Range-isPointInRange.html" => { min_pass: 5733, expected: [], heavy: true },
