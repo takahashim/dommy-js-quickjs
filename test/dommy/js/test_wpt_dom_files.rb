@@ -178,20 +178,21 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # and non-HTML documents match case-sensitively). The 3 remaining failures
     # are HTMLCollection proxy own-property semantics (expando shadowing, own
     # property descriptors) — a separate bridge-level gap.
+    # The 2 remaining failures need collection ABI methods (item/namedItem) to
+    # resolve to HTMLCollection.prototype (so an expando can shadow them) — a
+    # core proxy method-resolution change, deferred.
     "dom/nodes/Element-getElementsByTagName.html" => {
-      min_pass: 16,
+      min_pass: 17,
       expected: [
         "Should be able to set expando shadowing a proto prop (item)",
-        "Should be able to set expando shadowing a proto prop (namedItem)",
-        "hasOwnProperty, getOwnPropertyDescriptor, getOwnPropertyNames"
+        "Should be able to set expando shadowing a proto prop (namedItem)"
       ]
     },
     "dom/nodes/Document-getElementsByTagName.html" => {
-      min_pass: 15,
+      min_pass: 16,
       expected: [
         "Should be able to set expando shadowing a proto prop (item)",
-        "Should be able to set expando shadowing a proto prop (namedItem)",
-        "hasOwnProperty, getOwnPropertyDescriptor, getOwnPropertyNames"
+        "Should be able to set expando shadowing a proto prop (namedItem)"
       ]
     },
     # CharacterData: offsets/counts are WebIDL unsigned long (ToUint32 wrap) and
