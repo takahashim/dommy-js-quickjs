@@ -38,6 +38,18 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
     "css/selectors/pseudo-enabled-disabled.html" => { min_pass: 4, expected: [] },
     # :is()/:where() accept an empty (forgiving) selector list -> matches nothing.
     "css/selectors/is-where-basic.html" => { min_pass: 15, expected: [] },
+    "css/selectors/is-where-not.html" => { min_pass: 18, expected: [] },
+    "css/selectors/is-where-error-recovery.html" => { min_pass: 1, expected: [] },
+    "css/selectors/is-nested.html" => { min_pass: 2, expected: [] },
+    "css/selectors/not-complex.html" => { min_pass: 20, expected: [] },
+    "css/selectors/first-child.html" => { min_pass: 5, expected: [] },
+    "css/selectors/last-child.html" => { min_pass: 5, expected: [] },
+    "css/selectors/only-child.html" => { min_pass: 5, expected: [] },
+    "css/selectors/scope-selector.html" => {
+      min_pass: 2,
+      # querySelector(":scope") on a document should return the document element.
+      expected: ["querySelector() with \":scope\" should return the document element, if present in the subtree"]
+    },
     "css/css-color/parsing/color-computed.html" => { min_pass: 16, expected: [] },
     "css/css-color/parsing/color-computed-hex-color.html" => { min_pass: 6, expected: [] },
     "css/css-color/parsing/color-computed-hsl.html" => { min_pass: 3735, expected: CALC_IN_COLOR, heavy: true },
