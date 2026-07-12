@@ -244,16 +244,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # node's identity) recursively on DocumentFragment too, not just Element.
     "dom/nodes/Node-normalize.html" => { min_pass: 4, expected: [] },
     "dom/nodes/DocumentType-literal.html" => { min_pass: 1, expected: [] },
-    # adoptNode: rejecting a Document (NotSupportedError) works; the two failures
-    # are elements with XML-invalid names (`x<`, `:good:times:`) being adopted
-    # into an XML document, which Makiri's XML backend rejects (name strictness).
-    "dom/nodes/Document-adoptNode.html" => {
-      min_pass: 2,
-      expected: [
-        "Adopting an Element called 'x<' should work.",
-        "Adopting an Element called ':good:times:' should work."
-      ]
-    },
+    # adoptNode: rejecting a Document is NotSupportedError; DOM-lenient element
+    # names (`x<`, `:good:times:`) adopt into an XML document as loose names
+    # (Makiri >= 0.8.0 imports them verbatim instead of rejecting).
+    "dom/nodes/Document-adoptNode.html" => { min_pass: 4, expected: [] },
     "dom/nodes/Node-cloneNode.html" => { min_pass: 135, expected: [] },
     "dom/nodes/Node-contains.html" => { min_pass: 1482, expected: [] },
     "dom/nodes/Node-isEqualNode.html" => { min_pass: 9, expected: [] },
