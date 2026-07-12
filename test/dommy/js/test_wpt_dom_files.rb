@@ -173,6 +173,27 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # exact) and namespace, not a CSS type selector.
     "dom/nodes/Element-getElementsByTagNameNS.html" => { min_pass: 16, expected: [] },
     "dom/nodes/Document-getElementsByTagNameNS.html" => { min_pass: 14, expected: [] },
+    # getElementsByTagName follows the WHATWG qualified-name algorithm (only the
+    # query is ASCII-lowercased for HTML-namespace elements; non-HTML namespaces
+    # and non-HTML documents match case-sensitively). The 3 remaining failures
+    # are HTMLCollection proxy own-property semantics (expando shadowing, own
+    # property descriptors) — a separate bridge-level gap.
+    "dom/nodes/Element-getElementsByTagName.html" => {
+      min_pass: 16,
+      expected: [
+        "Should be able to set expando shadowing a proto prop (item)",
+        "Should be able to set expando shadowing a proto prop (namedItem)",
+        "hasOwnProperty, getOwnPropertyDescriptor, getOwnPropertyNames"
+      ]
+    },
+    "dom/nodes/Document-getElementsByTagName.html" => {
+      min_pass: 15,
+      expected: [
+        "Should be able to set expando shadowing a proto prop (item)",
+        "Should be able to set expando shadowing a proto prop (namedItem)",
+        "hasOwnProperty, getOwnPropertyDescriptor, getOwnPropertyNames"
+      ]
+    },
     # CharacterData: offsets/counts are WebIDL unsigned long (ToUint32 wrap) and
     # measured in UTF-16 code units (astral chars count as 2); null coerces to
     # "null"; substringData/appendData enforce their required-argument arity.
