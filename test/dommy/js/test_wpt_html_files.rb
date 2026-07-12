@@ -27,6 +27,41 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # --- HTML semantics --------------------------------------------------
     "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
     "html/semantics/forms/the-input-element/checkbox.html" => { min_pass: 6, expected: [] },
+    # Constraint validation (ValidityState + checkValidity/reportValidity), now
+    # reachable via the :valid/:invalid selectors too.
+    "html/semantics/forms/constraints/form-validation-checkValidity.html" => { min_pass: 130, expected: [] },
+    "html/semantics/forms/constraints/form-validation-reportValidity.html" => { min_pass: 130, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-valueMissing.html" => { min_pass: 78, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-typeMismatch.html" => { min_pass: 11, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-tooLong.html" => { min_pass: 63, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-tooShort.html" => { min_pass: 63, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-rangeUnderflow.html" => { min_pass: 47, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-rangeOverflow.html" => { min_pass: 49, expected: [] },
+    "html/semantics/forms/constraints/form-validation-validity-valid.html" => { min_pass: 35, expected: [] },
+    "html/semantics/forms/constraints/form-validation-willValidate.html" => {
+      min_pass: 70,
+      # <object> is barred from validation; SUBMIT-status willValidate edges.
+      expected: ->(name) { name.include?("barred from the constraint") || name.include?("in SUBMIT status") }
+    },
+    "html/semantics/forms/constraints/form-validation-validity-patternMismatch.html" => {
+      min_pass: 74,
+      # JS `v`-mode / Unicode-property regex isn't representable in Ruby regex, and
+      # the email+multiple pattern path.
+      expected: ->(name) { name.include?("regular expression gets ignored") || name.include?("multiple is present") }
+    },
+    "html/semantics/forms/constraints/form-validation-validity-stepMismatch.html" => {
+      min_pass: 27,
+      expected: ->(name) { name.include?("very small floating") }
+    },
+    "html/semantics/forms/constraints/form-validation-validity-badInput.html" => {
+      min_pass: 10,
+      expected: ->(name) { name.include?("COLOR") }
+    },
+    "html/semantics/forms/constraints/form-validation-validity-customError.html" => {
+      min_pass: 6,
+      # customError on <button>/<select> (non-mutable controls).
+      expected: ->(name) { name.include?("[button]") || name.include?("[select]") }
+    },
     "html/semantics/forms/the-input-element/radio.html" => {
       min_pass: 10,
       # Radio grouping for detached/orphan trees and cross-form-owner isolation
