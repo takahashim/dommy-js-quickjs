@@ -171,6 +171,15 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
     "dom/nodes/Element-setAttribute.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Element-removeAttribute.html" => { min_pass: 2, expected: [] },
+    # matches(null)/getElementById(null) coerce null to "null"; insertAdjacent*
+    # raises SyntaxError for an invalid position (ASCII case-insensitive) and a
+    # HierarchyRequestError for a second document child.
+    "dom/nodes/Element-matches.html" => { min_pass: 669, expected: [] },
+    "dom/nodes/Document-getElementById.html" => { min_pass: 18, expected: [] },
+    "dom/nodes/Element-insertAdjacentElement.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/Element-insertAdjacentText.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/rootNode.html" => { min_pass: 5, expected: [] },
+    "dom/nodes/Node-isConnected-shadow-dom.html" => { min_pass: 2, expected: [] },
     # WHATWG "locate a namespace": lookupNamespaceURI/lookupPrefix/isDefaultNamespace
     # walk the enclosing element chain, matching each element's own namespace and
     # its xmlns declarations (attributes in the xmlns namespace); xml/xmlns are
