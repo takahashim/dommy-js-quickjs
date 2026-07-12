@@ -169,6 +169,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # parentElement is the parent only when it is an element; a document or
+    # DocumentFragment parent yields null (on Text/Comment and Fragment too).
+    "dom/nodes/Node-parentElement.html" => { min_pass: 12, expected: [] },
+    "dom/nodes/DocumentType-remove.html" => { min_pass: 4, expected: [] },
     "dom/nodes/Element-setAttribute.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Element-removeAttribute.html" => { min_pass: 2, expected: [] },
     # matches(null)/getElementById(null) coerce null to "null"; insertAdjacent*
