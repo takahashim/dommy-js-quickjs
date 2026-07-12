@@ -169,6 +169,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # textContent setter: nullable DOMString (null/undefined clear with no text),
+    # replaces children by unlinking (so a removed node keeps its own subtree),
+    # and is implemented for DocumentFragment too.
+    "dom/nodes/Node-textContent.html" => { min_pass: 81, expected: [] },
     # parentElement is the parent only when it is an element; a document or
     # DocumentFragment parent yields null (on Text/Comment and Fragment too).
     "dom/nodes/Node-parentElement.html" => { min_pass: 12, expected: [] },
