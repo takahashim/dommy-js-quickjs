@@ -53,6 +53,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/events/Event-defaultPrevented.html" => { min_pass: 8, expected: [] },
     "dom/events/Event-defaultPrevented-after-dispatch.html" => { min_pass: 2, expected: [] },
     "dom/events/Event-dispatch-bubbles-false.html" => { min_pass: 5, expected: [] },
+    # UIEvent interface + legacy initUIEvent/initMouseEvent/initKeyboardEvent
+    # (no-op while dispatching); MouseEvent/KeyboardEvent/CompositionEvent now
+    # extend UIEvent.
+    "dom/events/Event-init-while-dispatching.html" => { min_pass: 5, expected: [] },
     "dom/events/Event-dispatch-bubbles-true.html" => { min_pass: 5, expected: [] },
     "dom/events/Event-dispatch-detached-click.html" => { min_pass: 2, expected: [] },
     "dom/events/Event-dispatch-multiple-cancelBubble.html" => { min_pass: 1, expected: [] },

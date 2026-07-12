@@ -95,8 +95,10 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
   end
 
   def test_shared_prototype_tail
-    # Distinct interfaces link into the same parent prototype object.
-    assert_equal true, js("return Object.getPrototypeOf(MouseEvent.prototype) === Event.prototype;")
+    # Interfaces link into their spec parent prototype: MouseEvent -> UIEvent ->
+    # Event (a shared tail object at each step).
+    assert_equal true, js("return Object.getPrototypeOf(MouseEvent.prototype) === UIEvent.prototype;")
+    assert_equal true, js("return Object.getPrototypeOf(UIEvent.prototype) === Event.prototype;")
   end
 
   def test_interface_constructor_name_and_tostringtag
