@@ -169,6 +169,9 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # Attr.baseURI returns its node document's base URL (from the owner element
+    # when attached, else the document it was created in).
+    "dom/nodes/Node-baseURI.html" => { min_pass: 9, expected: [] },
     # getElementsByTagNameNS matches on the element's local name (case-sensitive,
     # exact) and namespace, not a CSS type selector.
     "dom/nodes/Element-getElementsByTagNameNS.html" => { min_pass: 16, expected: [] },
