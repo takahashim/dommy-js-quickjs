@@ -27,6 +27,20 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # --- HTML semantics --------------------------------------------------
     "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
     "html/semantics/forms/the-input-element/checkbox.html" => { min_pass: 6, expected: [] },
+    "html/semantics/forms/the-input-element/minlength.html" => { min_pass: 5, expected: [] },
+    "html/semantics/forms/the-input-element/maxlength.html" => { min_pass: 5, expected: [] },
+    "html/semantics/forms/the-select-element/select-value.html" => { min_pass: 4, expected: [] },
+    "html/semantics/forms/the-select-element/select-add.html" => { min_pass: 2, expected: [] },
+    "html/semantics/forms/the-select-element/select-remove.html" => {
+      min_pass: 3,
+      # select.remove(index) removes an option; Element.prototype.remove.call
+      # (explicit prototype call) on a select is pending.
+      expected: ["Element#remove() should work on select elements."]
+    },
+    "html/semantics/forms/the-option-element/option-text-recurse.html" => { min_pass: 11, expected: [] },
+    "html/semantics/forms/the-datalist-element/datalistoptions.html" => { min_pass: 2, expected: [] },
+    "html/semantics/forms/the-form-element/form-elements-matches.html" => { min_pass: 2, expected: [] },
+    "html/semantics/forms/the-output-element/output-validity.html" => { min_pass: 1, expected: [] },
     # Constraint validation (ValidityState + checkValidity/reportValidity), now
     # reachable via the :valid/:invalid selectors too.
     "html/semantics/forms/constraints/form-validation-checkValidity.html" => { min_pass: 130, expected: [] },
