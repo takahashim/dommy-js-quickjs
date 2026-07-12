@@ -175,6 +175,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # raises SyntaxError for an invalid position (ASCII case-insensitive) and a
     # HierarchyRequestError for a second document child.
     "dom/nodes/Element-matches.html" => { min_pass: 669, expected: [] },
+    "dom/nodes/Element-webkitMatchesSelector.html" => { min_pass: 669, expected: [] },
     "dom/nodes/Document-getElementById.html" => { min_pass: 18, expected: [] },
     "dom/nodes/Element-insertAdjacentElement.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Element-insertAdjacentText.html" => { min_pass: 6, expected: [] },
