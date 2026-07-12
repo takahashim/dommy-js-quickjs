@@ -172,6 +172,15 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # MutationObserver — childList / attributes / characterData records, subtree,
+    # disconnect / takeRecords, nested (inner-outer) observation.
+    "dom/nodes/MutationObserver-childList.html" => { min_pass: 38, expected: [] },
+    "dom/nodes/MutationObserver-attributes.html" => { min_pass: 42, expected: [] },
+    "dom/nodes/MutationObserver-characterData.html" => { min_pass: 23, expected: [] },
+    "dom/nodes/MutationObserver-disconnect.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/MutationObserver-takeRecords.html" => { min_pass: 3, expected: [] },
+    "dom/nodes/MutationObserver-inner-outer.html" => { min_pass: 3, expected: [] },
+    "dom/nodes/ParentNode-querySelectorAll-removed-elements.html" => { min_pass: 1, expected: [] },
     # textContent setter: nullable DOMString (null/undefined clear with no text),
     # replaces children by unlinking (so a removed node keeps its own subtree),
     # and is implemented for DocumentFragment too.
