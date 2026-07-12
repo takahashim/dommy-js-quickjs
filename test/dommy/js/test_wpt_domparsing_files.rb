@@ -27,6 +27,13 @@ class Dommy::Js::TestWptDomParsingFiles < Minitest::Test
       # on the parser/style interaction Dommy doesn't model.
       expected: ["script is found synchronously even when there is a css import"]
     },
+    "domparsing/createContextualFragment.html" => {
+      min_pass: 34,
+      # A <script> parsed via createContextualFragment must run when the fragment
+      # is later inserted into the document — Dommy doesn't execute scripts on
+      # dynamic DOM insertion (only parser/document boot scripts run).
+      expected: ["<script>s should be run when appended to the document (but not before)"]
+    },
     "domparsing/domparser-spurious-attributes.html" => { min_pass: 2, expected: [] },
     "domparsing/innerhtml-04.html" => { min_pass: 1, expected: [] },
     "domparsing/innerhtml-06.html" => { min_pass: 1, expected: [] },
