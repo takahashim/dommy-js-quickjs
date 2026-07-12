@@ -104,11 +104,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/Element-previousElementSibling.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-siblingElement-null.html" => { min_pass: 1, expected: [] },
     "dom/nodes/Element-tagName.html" => { min_pass: 6, expected: [] },
-    "dom/nodes/attributes-namednodemap.html" => {
-      min_pass: 7,
-      # NamedNodeMap named-property set vs. method-name shadowing edge.
-      expected: ["setNamedItem and removeNamedItem on `attributes` should not interfere with existing method names"]
-    },
+    "dom/nodes/attributes-namednodemap.html" => { min_pass: 8, expected: [] },
     "dom/nodes/getElementsByClassName-empty-set.html" => { min_pass: 3, expected: [] },
     "dom/nodes/Node-compareDocumentPosition.html" => { min_pass: 1444, expected: [] },
     "dom/nodes/getElementsByClassName-01.htm" => { min_pass: 1, expected: [] },
@@ -224,23 +220,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # and non-HTML documents match case-sensitively). The 3 remaining failures
     # are HTMLCollection proxy own-property semantics (expando shadowing, own
     # property descriptors) — a separate bridge-level gap.
-    # The 2 remaining failures need collection ABI methods (item/namedItem) to
-    # resolve to HTMLCollection.prototype (so an expando can shadow them) — a
-    # core proxy method-resolution change, deferred.
-    "dom/nodes/Element-getElementsByTagName.html" => {
-      min_pass: 17,
-      expected: [
-        "Should be able to set expando shadowing a proto prop (item)",
-        "Should be able to set expando shadowing a proto prop (namedItem)"
-      ]
-    },
-    "dom/nodes/Document-getElementsByTagName.html" => {
-      min_pass: 16,
-      expected: [
-        "Should be able to set expando shadowing a proto prop (item)",
-        "Should be able to set expando shadowing a proto prop (namedItem)"
-      ]
-    },
+    # Read-only collection ABI methods (item/namedItem) now resolve to the
+    # interface prototype, so an expando can shadow them and identity holds.
+    "dom/nodes/Element-getElementsByTagName.html" => { min_pass: 19, expected: [] },
+    "dom/nodes/Document-getElementsByTagName.html" => { min_pass: 18, expected: [] },
     # CharacterData: offsets/counts are WebIDL unsigned long (ToUint32 wrap) and
     # measured in UTF-16 code units (astral chars count as 2); null coerces to
     # "null"; substringData/appendData enforce their required-argument arity.
