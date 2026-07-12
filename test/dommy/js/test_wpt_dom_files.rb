@@ -77,14 +77,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       expected: ["Appending a document", "Adopting an orphan", "Adopting a non-orphan"]
     },
     "dom/nodes/Comment-constructor.html" => {
-      min_pass: 12,
-      expected: [
-        # NUL bytes in comment data (Makiri/lexbor rejects them), ToString of a
-        # plain object argument, and cross-global ownerDocument (no second realm).
-        "new Comment(): \"\\0\"", "new Comment(): \"\\0test\"",
-        "new Comment(): two arguments",
-        "new Comment() should get the correct ownerDocument across globals"
-      ]
+      min_pass: 15,
+      # Only the cross-global ownerDocument case remains (WptRunner has no second
+      # realm whose Comment constructor binds that realm's document).
+      expected: ["new Comment() should get the correct ownerDocument across globals"]
     },
     "dom/nodes/DocumentFragment-constructor.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Document-getElementsByClassName.html" => { min_pass: 1, expected: [] },
@@ -213,12 +209,8 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     },
     "dom/nodes/Node-nodeName.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Text-constructor.html" => {
-      min_pass: 12,
-      expected: [
-        "new Text(): \"\\0\"", "new Text(): \"\\0test\"",
-        "new Text(): two arguments",
-        "new Text() should get the correct ownerDocument across globals"
-      ]
+      min_pass: 15,
+      expected: ["new Text() should get the correct ownerDocument across globals"]
     },
     "dom/nodes/ParentNode-children.html" => { min_pass: 1, expected: [] },
     "dom/nodes/ParentNode-querySelector-case-insensitive.html" => { min_pass: 2, expected: [] },
