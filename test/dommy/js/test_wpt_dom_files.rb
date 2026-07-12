@@ -176,6 +176,20 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # HierarchyRequestError for a second document child.
     "dom/nodes/Element-matches.html" => { min_pass: 669, expected: [] },
     "dom/nodes/Element-webkitMatchesSelector.html" => { min_pass: 669, expected: [] },
+    "dom/nodes/ParentNode-querySelectors-exclusive.html" => { min_pass: 1, expected: [] },
+    "dom/nodes/ParentNode-querySelectors-namespaces.html" => { min_pass: 1, expected: [] },
+    # querySelector(All) is ~99.3% green. The remaining edge cases are :link/
+    # :visited (link-history pseudo-classes), :target in a detached/fragment root
+    # (no browsing context), and `|div`/`|*` no-namespace selectors against a
+    # detached/fragment subtree (namespace not preserved through import/clone).
+    "dom/nodes/ParentNode-querySelector-All.html" => {
+      min_pass: 1961,
+      expected: ->(name) {
+        name.include?(":link and :visited") ||
+          name.include?(":target pseudo-class") ||
+          name.include?("Namespace selector")
+      }
+    },
     "dom/nodes/Document-getElementById.html" => { min_pass: 18, expected: [] },
     "dom/nodes/Element-insertAdjacentElement.html" => { min_pass: 6, expected: [] },
     "dom/nodes/Element-insertAdjacentText.html" => { min_pass: 6, expected: [] },
