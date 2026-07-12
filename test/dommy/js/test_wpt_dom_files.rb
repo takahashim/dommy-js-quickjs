@@ -286,6 +286,21 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/ParentNode-querySelector-case-insensitive.html" => { min_pass: 2, expected: [] },
     "dom/nodes/ParentNode-querySelector-scope.html" => { min_pass: 4, expected: [] },
     "dom/nodes/ParentNode-querySelectors-space-and-dash-attribute-value.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Element-children.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/DocumentFragment-getElementById.html" => { min_pass: 5, expected: [] },
+    "dom/nodes/Element-matches-namespaced-elements.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/getElementsByClassName-whitespace-class-names.html" => { min_pass: 26, expected: [] },
+    "dom/nodes/Text-wholeText.html" => { min_pass: 1, expected: [] },
+    # ParentNode.append/prepend on a Document, including cross-document adoption
+    # of the inserted element.
+    "dom/nodes/append-on-Document.html" => { min_pass: 5, expected: [] },
+    "dom/nodes/prepend-on-Document.html" => { min_pass: 5, expected: [] },
+    "dom/nodes/Document-importNode.html" => {
+      min_pass: 4,
+      # Importing an Attr node across documents (namespace/prefix preservation)
+      # isn't modeled — Makiri can't clone a standalone attribute node between arenas.
+      expected: ["Import an Attr node with namespace/prefix correctly."]
+    },
 
     # --- ranges ----------------------------------------------------------
     "dom/ranges/Range-attributes.html" => { min_pass: 1, expected: [] },
