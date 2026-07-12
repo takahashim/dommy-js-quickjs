@@ -169,6 +169,10 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # getElementsByTagNameNS matches on the element's local name (case-sensitive,
+    # exact) and namespace, not a CSS type selector.
+    "dom/nodes/Element-getElementsByTagNameNS.html" => { min_pass: 16, expected: [] },
+    "dom/nodes/Document-getElementsByTagNameNS.html" => { min_pass: 14, expected: [] },
     # CharacterData: offsets/counts are WebIDL unsigned long (ToUint32 wrap) and
     # measured in UTF-16 code units (astral chars count as 2); null coerces to
     # "null"; substringData/appendData enforce their required-argument arity.
