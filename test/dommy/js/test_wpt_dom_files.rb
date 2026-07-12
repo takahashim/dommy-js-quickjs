@@ -301,6 +301,20 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       # isn't modeled — Makiri can't clone a standalone attribute node between arenas.
       expected: ["Import an Attr node with namespace/prefix correctly."]
     },
+    "dom/nodes/DocumentType-remove.html" => { min_pass: 4, expected: [] },
+    "dom/nodes/remove-unscopable.html" => {
+      min_pass: 3,
+      # Element.prototype[Symbol.unscopables] is now present, but this test also
+      # re-sets the handler at runtime via setAttribute("onclick", …), and Dommy
+      # only compiles inline on* content-attribute handlers at boot (a runtime
+      # attribute change doesn't recompile), so before/after/replaceWith run the
+      # stale initial handler.
+      expected: [
+        "before() should be unscopable",
+        "after() should be unscopable",
+        "replaceWith() should be unscopable"
+      ]
+    },
 
     # --- ranges ----------------------------------------------------------
     "dom/ranges/Range-attributes.html" => { min_pass: 1, expected: [] },
