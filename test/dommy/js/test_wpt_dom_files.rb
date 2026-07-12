@@ -57,6 +57,11 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # (no-op while dispatching); MouseEvent/KeyboardEvent/CompositionEvent now
     # extend UIEvent.
     "dom/events/Event-init-while-dispatching.html" => { min_pass: 5, expected: [] },
+    # Event subclass constructors: attributes seeded on the interface prototypes
+    # (so `"view" in ev` / hasOwnProperty resolve), WheelEvent/FocusEvent chains,
+    # MouseEvent buttons/relatedTarget, UIEvent view type-check, and a JS subclass
+    # (`class extends Event`) getting new.target's prototype stamped.
+    "dom/events/Event-subclasses-constructors.html" => { min_pass: 49, expected: [] },
     "dom/events/Event-dispatch-bubbles-true.html" => { min_pass: 5, expected: [] },
     "dom/events/Event-dispatch-detached-click.html" => { min_pass: 2, expected: [] },
     "dom/events/Event-dispatch-multiple-cancelBubble.html" => { min_pass: 1, expected: [] },
