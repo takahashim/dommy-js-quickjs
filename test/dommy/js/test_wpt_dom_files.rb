@@ -183,6 +183,12 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/CharacterData-replaceData.html" => { min_pass: 34, expected: [] },
     "dom/nodes/CharacterData-substringData.html" => { min_pass: 28, expected: [] },
     "dom/nodes/Text-splitText.html" => { min_pass: 6, expected: [] },
+    # ChildNode#remove is void -> returns undefined (not null); createComment /
+    # createTextNode coerce a null argument to the string "null".
+    "dom/nodes/CharacterData-remove.html" => { min_pass: 12, expected: [] },
+    "dom/nodes/Element-remove.html" => { min_pass: 4, expected: [] },
+    "dom/nodes/Document-createComment.html" => { min_pass: 6, expected: [] },
+    "dom/nodes/Document-createTextNode.html" => { min_pass: 6, expected: [] },
     # normalize() now merges adjacent Text descendants (preserving the first
     # node's identity) recursively on DocumentFragment too, not just Element.
     "dom/nodes/Node-normalize.html" => { min_pass: 4, expected: [] },
