@@ -150,6 +150,42 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # A blank iframe's contentWindow is its own realm: `contentWindow.Event` /
+  # `.DOMException` / `.Range` resolve to real (constructable) constructors, not
+  # bare host proxies — so cross-frame `new cw.Event(...)` and DOM machinery
+  # (Range) work inside the nested document. This is the per-frame constructor
+  # seeding that WPT's iframe-based tests (Range-insertNode etc.) rely on.
+  def test_blank_iframe_content_window_has_its_own_constructors
+    html = <<~HTML
+      <html><body><iframe id="f"></iframe></body></html>
+    HTML
+    Dommy::Browser.open(html, url: "http://x.test/") do |b|
+      cw = 'document.getElementById("f").contentWindow'
+      assert_equal "function", b.evaluate("typeof #{cw}.Event")
+      assert_equal "function", b.evaluate("typeof #{cw}.DOMException")
+      assert_equal "function", b.evaluate("typeof #{cw}.Range")
+      assert_equal "function", b.evaluate("typeof #{cw}.Node")
+      # The seeded constructors are constructable across the frame boundary.
+      # (Parenthesize the callee — `new a.b("x").c` would bind "x" as `new`'s args.)
+      assert_equal "hi", b.evaluate("new (#{cw}.Event)('hi').type")
+      assert_equal "AbortError", b.evaluate("new (#{cw}.DOMException)('m', 'AbortError').name")
+      # Range machinery works inside the nested document.
+      assert_equal "<p>ab<span>X</span>cdef</p>", b.evaluate(<<~JS)
+        (function () {
+          var cd = document.getElementById("f").contentDocument;
+          cd.body.innerHTML = "<p>abcdef</p>";
+          var text = cd.body.firstChild.firstChild;
+          var r = cd.createRange();
+          r.setStart(text, 2); r.setEnd(text, 2);
+          var span = cd.createElement("span");
+          span.textContent = "X";
+          r.insertNode(span);
+          return cd.body.firstChild.outerHTML;
+        })()
+      JS
+    end
+  end
+
   def test_current_script_is_set_during_execution
     Dommy::Browser.open(PAGE, url: "http://example.test/", resources: resources) do |b|
       # The inline script saw a non-null currentScript (its own element; no id → "").
