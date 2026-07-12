@@ -169,6 +169,11 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # adoption (re-created in the destination backend, wrapper reseated).
     "dom/nodes/Node-replaceChild.html" => { min_pass: 29, expected: [] },
     "dom/nodes/Node-removeChild.html" => { min_pass: 28, expected: [] },
+    # WHATWG "locate a namespace": lookupNamespaceURI/lookupPrefix/isDefaultNamespace
+    # walk the enclosing element chain, matching each element's own namespace and
+    # its xmlns declarations (attributes in the xmlns namespace); xml/xmlns are
+    # implicitly bound. Routed on Element, CharacterData, Attr, Document, DocumentType.
+    "dom/nodes/Node-lookupNamespaceURI.html" => { min_pass: 75, expected: [] },
     # Attr.baseURI returns its node document's base URL (from the owner element
     # when attached, else the document it was created in).
     "dom/nodes/Node-baseURI.html" => { min_pass: 9, expected: [] },
