@@ -62,6 +62,9 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     # MouseEvent buttons/relatedTarget, UIEvent view type-check, and a JS subclass
     # (`class extends Event`) getting new.target's prototype stamped.
     "dom/events/Event-subclasses-constructors.html" => { min_pass: 49, expected: [] },
+    # A constructed/subclassed EventTarget dispatches correctly; composedPath()
+    # is empty once dispatch finishes.
+    "dom/events/EventTarget-constructible.any.js" => { min_pass: 3, expected: [] },
     "dom/events/Event-dispatch-bubbles-true.html" => { min_pass: 5, expected: [] },
     "dom/events/Event-dispatch-detached-click.html" => { min_pass: 2, expected: [] },
     "dom/events/Event-dispatch-multiple-cancelBubble.html" => { min_pass: 1, expected: [] },

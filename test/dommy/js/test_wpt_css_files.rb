@@ -34,6 +34,10 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
     "css/css-variables/var-parsing.html" => { min_pass: 3, expected: VAR_INVALID_SYNTAX },
     "css/css-variables/variable-cycles.html" => { min_pass: 11, expected: [] },
     "css/selectors/child-indexed-pseudo-class.html" => { min_pass: 54, expected: [] },
+    "css/selectors/has-basic.html" => { min_pass: 18, expected: [] },
+    "css/selectors/pseudo-enabled-disabled.html" => { min_pass: 4, expected: [] },
+    # :is()/:where() accept an empty (forgiving) selector list -> matches nothing.
+    "css/selectors/is-where-basic.html" => { min_pass: 15, expected: [] },
     "css/css-color/parsing/color-computed.html" => { min_pass: 16, expected: [] },
     "css/css-color/parsing/color-computed-hex-color.html" => { min_pass: 6, expected: [] },
     "css/css-color/parsing/color-computed-hsl.html" => { min_pass: 3735, expected: CALC_IN_COLOR, heavy: true },
