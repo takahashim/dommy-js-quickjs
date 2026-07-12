@@ -157,12 +157,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       # the assert_array_equals identity check fails.
       expected: ["Document.replaceChildren() with a doctype, replacing an existing doctype and element."]
     },
-    "dom/nodes/Node-insertBefore.html" => {
-      min_pass: 39,
-      # WebIDL requires the reference-child argument to be Node/null/undefined,
-      # else TypeError; Dommy doesn't yet type-check the second argument.
-      expected: ["Calling insertBefore with second argument missing, or other than Node, null, or undefined, must throw TypeError."]
-    },
+    "dom/nodes/Node-insertBefore.html" => { min_pass: 40, expected: [] },
     # replaceChild: leaf-parent HierarchyRequestError ordering, document step-6
     # constraints (excluding the replaced node from the "already has" counts),
     # the reference-child==new-child anchor advance, and cross-document doctype
