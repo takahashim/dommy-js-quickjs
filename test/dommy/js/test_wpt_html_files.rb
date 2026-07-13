@@ -139,6 +139,11 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/documents/dom-tree-accessors/document.title-01.html" => { min_pass: 4, expected: [] },
+    "html/dom/documents/dom-tree-accessors/document.head-01.html" => { min_pass: 1, expected: [] },
+    "html/dom/documents/dom-tree-accessors/document.head-02.html" => { min_pass: 1, expected: [] },
+    "html/dom/documents/dom-tree-accessors/document.getElementsByClassName-same.html" => { min_pass: 1, expected: [] },
+    "html/dom/documents/dom-tree-accessors/Document.getElementsByClassName-null-undef.html" => { min_pass: 1, expected: [] },
+    "html/dom/documents/dom-tree-accessors/Element.getElementsByClassName-null-undef.html" => { min_pass: 1, expected: [] },
     "html/dom/documents/dom-tree-accessors/nameditem-01.html" => {
       min_pass: 6,
       # document named-access doesn't live-update when an element's name attribute
