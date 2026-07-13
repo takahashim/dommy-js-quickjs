@@ -52,6 +52,7 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/forms/the-fieldset-element/fieldset-checkvalidity.html" => { min_pass: 1, expected: [] },
     "html/semantics/forms/the-fieldset-element/fieldset-willvalidate.html" => { min_pass: 1, expected: [] },
     "html/semantics/forms/the-fieldset-element/fieldset-validity.html" => { min_pass: 1, expected: [] },
+    "html/semantics/forms/the-fieldset-element/disabled-001.html" => { min_pass: 5, expected: [] },
     "html/semantics/forms/the-select-element/common-HTMLOptionsCollection.html" => { min_pass: 8, expected: [] },
     "html/semantics/forms/the-select-element/common-HTMLOptionsCollection-add.html" => { min_pass: 3, expected: [] },
     "html/semantics/forms/the-select-element/common-HTMLOptionsCollection-namedItem.html" => { min_pass: 6, expected: [] },
