@@ -26,6 +26,8 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
 
     # --- HTML semantics --------------------------------------------------
     "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
+    "html/semantics/forms/the-button-element/button-validation.html" => { min_pass: 6, expected: [] },
+    "html/semantics/forms/the-textarea-element/cloning-steps.html" => { min_pass: 2, expected: [] },
     "html/semantics/forms/the-input-element/checkbox.html" => { min_pass: 6, expected: [] },
     "html/semantics/forms/the-input-element/minlength.html" => { min_pass: 5, expected: [] },
     "html/semantics/forms/the-input-element/maxlength.html" => { min_pass: 5, expected: [] },
