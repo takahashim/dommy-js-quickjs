@@ -30,6 +30,7 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/forms/the-input-element/minlength.html" => { min_pass: 5, expected: [] },
     "html/semantics/forms/the-input-element/maxlength.html" => { min_pass: 5, expected: [] },
     "html/semantics/forms/the-input-element/input-list.html" => { min_pass: 6, expected: [] },
+    "html/semantics/forms/the-input-element/clone.html" => { min_pass: 19, expected: [] },
     "html/semantics/forms/the-select-element/select-value.html" => { min_pass: 4, expected: [] },
     "html/semantics/forms/the-select-element/select-add.html" => { min_pass: 2, expected: [] },
     "html/semantics/forms/the-select-element/select-remove.html" => {
