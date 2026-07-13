@@ -118,6 +118,24 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/tabular-data/attributes-common-to-td-and-th-elements/cellIndex.html" => { min_pass: 6, expected: [] },
     "html/semantics/grouping-content/the-dl-element/grouping-dl.html" => { min_pass: 1, expected: [] },
 
+    # --- text-level / interactive / embedded -----------------------------
+    "html/semantics/interactive-elements/the-details-element/details.html" => { min_pass: 5, expected: [] },
+    "html/semantics/text-level-semantics/the-a-element/a.text-getter-01.html" => { min_pass: 6, expected: [] },
+    "html/semantics/text-level-semantics/the-a-element/a.text-setter-01.html" => { min_pass: 5, expected: [] },
+    "html/semantics/embedded-content/the-img-element/Image-constructor.html" => { min_pass: 5, expected: [] },
+    "html/semantics/text-level-semantics/the-a-element/a-stringifier.html" => {
+      min_pass: 7,
+      # HTMLAnchorElement.prototype.toString.call(nonAnchor) should throw a WebIDL
+      # "illegal invocation" TypeError — the bridge doesn't brand-check `this` on
+      # host methods.
+      expected: [
+        "HTMLAnchorElement stringifier 1",
+        "HTMLAnchorElement stringifier 2",
+        "HTMLAnchorElement stringifier 6",
+        "HTMLAnchorElement stringifier 7"
+      ]
+    },
+
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/documents/dom-tree-accessors/document.title-01.html" => { min_pass: 4, expected: [] },
