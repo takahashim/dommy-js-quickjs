@@ -63,6 +63,18 @@ class Dommy::Js::TestWptCssFiles < Minitest::Test
     },
     "css/cssom/MediaList.html" => { min_pass: 1, expected: [] },
     "css/cssom/getComputedStyle-detached-subtree.html" => { min_pass: 1, expected: [] },
-    "css/cssom/getComputedStyle-pseudo.html" => { min_pass: 4, expected: LAYOUT_PSEUDO }
+    "css/cssom/getComputedStyle-pseudo.html" => { min_pass: 4, expected: LAYOUT_PSEUDO },
+    "css/cssom/css-style-attribute-modifications.html" => { min_pass: 1, expected: [] },
+    "css/cssom/css-style-attr-decl-block.html" => {
+      min_pass: 5,
+      # A no-op declaration change (removing an absent property / setting an
+      # invalid value that's dropped) should queue no mutation record — Dommy
+      # doesn't validate CSS values or detect the no-op. Base-URL-change
+      # reflection needs navigation.
+      expected: [
+        "Removing non-existing property or setting invalid value on CSS declaration block shouldn't queue mutation record",
+        "Changes to CSS declaration block after a base URL change"
+      ]
+    }
   )
 end
