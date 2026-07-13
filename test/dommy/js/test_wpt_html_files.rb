@@ -95,6 +95,24 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/grouping-content/the-li-element/grouping-li.html" => { min_pass: 10, expected: [] },
     "html/semantics/grouping-content/the-ol-element/grouping-ol.html" => { min_pass: 25, expected: [] },
 
+    # --- tabular data (table/tr/tbody DOM APIs, all fully green) ----------
+    "html/semantics/tabular-data/the-table-element/caption-methods.html" => { min_pass: 18, expected: [] },
+    "html/semantics/tabular-data/the-table-element/createTBody.html" => { min_pass: 15, expected: [] },
+    "html/semantics/tabular-data/the-table-element/insertRow-method-01.html" => { min_pass: 1, expected: [] },
+    "html/semantics/tabular-data/the-table-element/tBodies.html" => { min_pass: 1, expected: [] },
+    "html/semantics/tabular-data/the-table-element/tFoot.html" => { min_pass: 2, expected: [] },
+    "html/semantics/tabular-data/the-table-element/tHead.html" => { min_pass: 3, expected: [] },
+    "html/semantics/tabular-data/the-table-element/table-rows.html" => { min_pass: 5, expected: [] },
+    "html/semantics/tabular-data/the-table-element/delete-caption.html" => { min_pass: 6, expected: [] },
+    "html/semantics/tabular-data/the-tr-element/cells.html" => { min_pass: 1, expected: [] },
+    "html/semantics/tabular-data/the-tr-element/insertCell.html" => { min_pass: 7, expected: [] },
+    "html/semantics/tabular-data/the-tr-element/deleteCell.html" => { min_pass: 6, expected: [] },
+    "html/semantics/tabular-data/the-tr-element/rowIndex.html" => { min_pass: 12, expected: [] },
+    "html/semantics/tabular-data/the-tr-element/sectionRowIndex.html" => { min_pass: 19, expected: [] },
+    "html/semantics/tabular-data/the-tbody-element/rows.html" => { min_pass: 1, expected: [] },
+    "html/semantics/tabular-data/the-tbody-element/insertRow.html" => { min_pass: 6, expected: [] },
+    "html/semantics/tabular-data/the-tbody-element/deleteRow.html" => { min_pass: 6, expected: [] },
+
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
     "html/dom/documents/dom-tree-accessors/document.title-01.html" => { min_pass: 4, expected: [] },
