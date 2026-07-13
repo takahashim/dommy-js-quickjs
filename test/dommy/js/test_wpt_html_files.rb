@@ -112,6 +112,11 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/tabular-data/the-tbody-element/rows.html" => { min_pass: 1, expected: [] },
     "html/semantics/tabular-data/the-tbody-element/insertRow.html" => { min_pass: 6, expected: [] },
     "html/semantics/tabular-data/the-tbody-element/deleteRow.html" => { min_pass: 6, expected: [] },
+    "html/semantics/tabular-data/the-thead-element/rows.html" => { min_pass: 1, expected: [] },
+    "html/semantics/tabular-data/the-tfoot-element/rows.html" => { min_pass: 1, expected: [] },
+    "html/semantics/tabular-data/the-caption-element/caption_001.html" => { min_pass: 5, expected: [] },
+    "html/semantics/tabular-data/attributes-common-to-td-and-th-elements/cellIndex.html" => { min_pass: 6, expected: [] },
+    "html/semantics/grouping-content/the-dl-element/grouping-dl.html" => { min_pass: 1, expected: [] },
 
     # --- HTML DOM --------------------------------------------------------
     "html/dom/access-key-label.html" => { min_pass: 2, expected: [] },
