@@ -700,9 +700,14 @@ getComputedStyle・Shadow DOM・Custom Elements は実装済み。大規模な�
     再生成された Attr」の初回読みでキャッシュ不能。facade 化は WPT の identity 意味論を
     壊すリスクの割に効果が薄い。conformance 再計測: **49186/49481 (99.4%) / 710 files
     (639 fully green)** — 本日のブリッジ変更 (fc1af56 / 9704b6c) で退行なし。
-  - **残 (Stage 2): イベントオブジェクトの JS 側化** — construct 側の残 1514 越境。
-    slow path でリスナーが受ける event の同一性 (e === ev) を保つには JS event を正とする
-    反転が必要 (bridge-redesign.md 領域)。
+  - **✅ B4 installment 3 (2026-07-14, dommy c1f3c5c): Event/CustomEvent の JS 側化** —
+    設計 `docs/js-side-events-design.md`。construct は越境ゼロ (seed 済み prototype 上の
+    pure-JS オブジェクト、共有アクセサ + isTrusted は unforgeable、initEvent/initCustomEvent/
+    returnValue/cancelBubble まで実装)。dispatch は type 判定 `__rb_host_event_fast` 1 越境のみで
+    JS 完結 (未リッスン名前空間 type)、リッスン済みは dispatch 時に host twin を lazy 生成し
+    `jsEventByHandle` で rehydrate がリスナーに同一オブジェクトを渡す。canceled は dispatch
+    返り値から fold back。**実測: morph 405→~285ms (D4b 基準から -30%)**。
+    WPT Event-constructors / isTrusted / init-while-dispatching 含め全 5 スイート green。
   - `html/dom/reflection-*.html` (数千サブテスト) は全 DOM 操作が Ruby 往復するため
     60 秒 VM タイムアウトで vendor 不能
   - [ ] (a) 単純な属性 reflection の getter/setter を定義テーブルから JS 側で生成し、
