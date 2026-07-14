@@ -102,6 +102,51 @@ class Dommy::Js::TestEventDispatchFastpath < Minitest::Test
     JS
   end
 
+  def test_stop_propagation_flag_resets_when_dispatch_completes
+    assert_equal true, @h.evaluate(<<~JS)
+      (() => {
+        var parent = document.getElementById("x");
+        var child = document.createElement("span");
+        parent.appendChild(child);
+        var stopOnce = (e) => { e.stopPropagation(); child.removeEventListener("app:stop", stopOnce); };
+        var bubbled = 0;
+        child.addEventListener("app:stop", stopOnce);
+        parent.addEventListener("app:stop", () => { bubbled += 1; });
+        var ev = new CustomEvent("app:stop", {bubbles: true});
+        child.dispatchEvent(ev); // stopped by the child listener
+        var afterFirst = ev.cancelBubble; // spec: flag unset at dispatch end
+        child.dispatchEvent(ev); // reused event object must propagate again
+        return afterFirst === false && bubbled === 1;
+      })()
+    JS
+  end
+
+  def test_prototype_extracted_dispatch_event_handles_js_events
+    assert_equal true, @h.evaluate(<<~JS)
+      (() => {
+        var el = document.getElementById("x");
+        var got = null;
+        el.addEventListener("app:proto", (e) => { got = e; e.preventDefault(); });
+        var ev = new CustomEvent("app:proto", {cancelable: true});
+        var r = EventTarget.prototype.dispatchEvent.call(el, ev);
+        return r === false && got === ev && ev.defaultPrevented === true;
+      })()
+    JS
+  end
+
+  def test_init_custom_event_after_fast_dispatch_drops_the_shadow
+    assert_equal true, @h.evaluate(<<~JS)
+      (() => {
+        var ev = document.createEvent("CustomEvent");
+        ev.initCustomEvent("app:shadow", false, true, null);
+        ev.preventDefault(); // canceled
+        document.getElementById("x").dispatchEvent(ev); // fast: shadow planted (true)
+        ev.initCustomEvent("app:shadow", false, false, null); // host resets canceled
+        return ev.defaultPrevented === false;
+      })()
+    JS
+  end
+
   def test_colonless_types_keep_the_classic_path
     assert_equal true, @h.evaluate(<<~JS)
       (() => {
