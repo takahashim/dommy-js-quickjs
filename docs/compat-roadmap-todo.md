@@ -686,9 +686,17 @@ getComputedStyle・Shadow DOM・Custom Elements は実装済み。大規模な�
   - **検討して見送り: JS 側 epoch の attr/tree 分割** (Ruby 側 D1b の bridge 版) — morph の
     支配項 dispatchEvent は Ruby 側デフォルトアクション (details の open 属性等) が DOM を
     変えうるため保守バンプが必須で、分割しても効果が薄い。イベントの JS 側化とセットで再検討。
-  - **次の本丸: イベントオブジェクトの JS 側化** — morph 残の CustomEvent construct 1514 +
-    dispatchEvent 1500 + defaultPrevented 1207 (~4200 越境 + dispatch 毎の全キャッシュ無効化)。
-    リスナー型レジストリ (Ruby 側リスナーは entry 毎に dirty 化) + no-listener fast path。
+  - **✅ B4 installment 2 (2026-07-14, dommy 9704b6c): unlistened-dispatch fast path** —
+    設計 `docs/event-dispatch-fastpath.md`。判定と実行を 1 往復に融合した
+    `__rb_host_dispatch_fast`: type がコロン入り (組み込み default action なし) かつ
+    EventTarget の**追加専用** type レジストリ (Ruby が権威 = 同期問題が構造的に無い) で
+    未リッスンなら通常 dispatch を実行し、JS 側は epoch バンプをスキップ +
+    defaultPrevented を own-prop shadow 化 (preventDefault/initEvent/returnValue/再dispatch で
+    shadow 整合)。**実測**: morph 405→~330ms、51905→41081 越境 (D4b 基準から累積 -19%/-21%)。
+    エッジテスト 9 本追加、全 5 スイート green。
+  - **残 (Stage 2): イベントオブジェクトの JS 側化** — construct 側の残 1514 越境。
+    slow path でリスナーが受ける event の同一性 (e === ev) を保つには JS event を正とする
+    反転が必要 (bridge-redesign.md 領域)。
   - `html/dom/reflection-*.html` (数千サブテスト) は全 DOM 操作が Ruby 往復するため
     60 秒 VM タイムアウトで vendor 不能
   - [ ] (a) 単純な属性 reflection の getter/setter を定義テーブルから JS 側で生成し、
