@@ -106,6 +106,8 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/forms/the-textarea-element/textarea-type.html" => { min_pass: 1, expected: [] },
     "html/semantics/grouping-content/the-li-element/grouping-li.html" => { min_pass: 10, expected: [] },
     "html/semantics/grouping-content/the-ol-element/grouping-ol.html" => { min_pass: 25, expected: [] },
+    "html/semantics/grouping-content/the-hr-element/grouping-hr.html" => { min_pass: 1, expected: [] },
+    "html/semantics/text-level-semantics/the-time-element/001.html" => { min_pass: 8, expected: [] },
 
     # --- tabular data (table/tr/tbody DOM APIs, all fully green) ----------
     "html/semantics/tabular-data/the-table-element/caption-methods.html" => { min_pass: 18, expected: [] },

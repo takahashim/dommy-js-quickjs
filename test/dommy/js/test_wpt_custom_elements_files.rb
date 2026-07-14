@@ -13,6 +13,7 @@ class Dommy::Js::TestWptCustomElementsFiles < Minitest::Test
   include Dommy::Js::WptConformance
 
   wpt_files(
+    "custom-elements/adopted-callback.html" => { min_pass: 1, expected: [] },
     "custom-elements/CustomElementRegistry-getName.html" => { min_pass: 4, expected: [] },
     "custom-elements/CustomElementRegistry.html" => {
       min_pass: 43,

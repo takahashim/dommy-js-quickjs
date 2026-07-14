@@ -287,6 +287,7 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
     "dom/nodes/ParentNode-querySelector-scope.html" => { min_pass: 4, expected: [] },
     "dom/nodes/ParentNode-querySelectors-space-and-dash-attribute-value.html" => { min_pass: 2, expected: [] },
     "dom/nodes/Element-children.html" => { min_pass: 2, expected: [] },
+    "dom/nodes/Node-childNodes-cache-2.html" => { min_pass: 1, expected: [] },
     "dom/nodes/DocumentFragment-getElementById.html" => { min_pass: 5, expected: [] },
     "dom/nodes/Element-matches-namespaced-elements.html" => { min_pass: 6, expected: [] },
     "dom/nodes/getElementsByClassName-whitespace-class-names.html" => { min_pass: 26, expected: [] },
