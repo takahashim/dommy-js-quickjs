@@ -729,6 +729,10 @@ getComputedStyle・Shadow DOM・Custom Elements は実装済み。大規模な�
   - [x] Stimulus 公式 QUnit スイート: `rake stimulus:conformance` で **210/214 (98.1%)**。
     `StimulusConformance` + `stimulus-tests.umd.js`(`build_stimulus_tests.sh` で再生成)。
     残り 4 = ApplicationStartTests 0/3 (document loading 状態) + LegacyTargetTests 9/10。
+  - [x] Turbo 公式スイート (unit): **38/38 (100%)** に到達 (2026-07-14 再計測)。
+    stream_element_tests 18/18 も green — 「`new StreamElement()` 未対応」は B1 installments
+    (CustomElementRegistry 準拠化 / prototype seeding) とブリッジ改修の積み重ねで解消済みだった。
+    functional/integration 系が Playwright 依存で移植不可の判断は変わらず。旧記載:
   - [~] Turbo 公式スイート: **unit のみ移植可**。`rake turbo:conformance` で **20/38 (52.6%)**。
     `TurboConformance` + `turbo-tests.umd.js`(`build_turbo_tests.sh` で再生成、mocha TDD +
     chai `assert` は `mocha_shim.js` / `@open-wc/testing` は `openwc_testing_shim.js` で供給)。
