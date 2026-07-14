@@ -694,6 +694,12 @@ getComputedStyle・Shadow DOM・Custom Elements は実装済み。大規模な�
     defaultPrevented を own-prop shadow 化 (preventDefault/initEvent/returnValue/再dispatch で
     shadow 整合)。**実測**: morph 405→~330ms、51905→41081 越境 (D4b 基準から累積 -19%/-21%)。
     エッジテスト 9 本追加、全 5 スイート green。
+  - **調査して見送り: NamedNodeMap の読み取りバッチ RPC** — Ruby 側の NamedNodeMap/Attr
+    ラッパーは identity 安定 (item(0).equal?(item(0)) == true) で proxy の const キャッシュは
+    既に効いている。morph 残の Attr#name ~1800 は「fetch した新文書側 + setAttribute で
+    再生成された Attr」の初回読みでキャッシュ不能。facade 化は WPT の identity 意味論を
+    壊すリスクの割に効果が薄い。conformance 再計測: **49186/49481 (99.4%) / 710 files
+    (639 fully green)** — 本日のブリッジ変更 (fc1af56 / 9704b6c) で退行なし。
   - **残 (Stage 2): イベントオブジェクトの JS 側化** — construct 側の残 1514 越境。
     slow path でリスナーが受ける event の同一性 (e === ev) を保つには JS event を正とする
     反転が必要 (bridge-redesign.md 領域)。
