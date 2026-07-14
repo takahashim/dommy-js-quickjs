@@ -676,6 +676,19 @@ getComputedStyle・Shadow DOM・Custom Elements は実装済み。大規模な�
       overrideMimeType、send(ES object) の JS 側 ToString。
   - 未着手: urlpattern は URLPattern 未実装、streams は大規模。
 - [ ] **B4. ブリッジのバッチ化 → reflection.js の解放** — 互換計測と実アプリ性能の一石二鳥
+  - **✅ B4 initial installment (2026-07-14, dommy fc1af56)** — D4b の実データ駆動で 3 点:
+    (1) expando write の JS 側化 (own-prop 短絡 + host が一度 decline した (interface, prop) の
+    負キャッシュ。on*/window は value 依存なので除外)、(2) Attr#name 等を interface 別 const
+    キャッシュ + Attr#value を epoch キャッシュ、(3) createElement/cloneNode 等の factory を
+    非変異に分類 (detached 生成はキャッシュを stale にできない) + isConnected を epoch-stable に。
+    **実測**: React initial 124.8→91.3ms (-27%)、re-render 53.9→34.4ms (-36%)、morph 405→339ms
+    (-16%)。全 5 スイート green。
+  - **検討して見送り: JS 側 epoch の attr/tree 分割** (Ruby 側 D1b の bridge 版) — morph の
+    支配項 dispatchEvent は Ruby 側デフォルトアクション (details の open 属性等) が DOM を
+    変えうるため保守バンプが必須で、分割しても効果が薄い。イベントの JS 側化とセットで再検討。
+  - **次の本丸: イベントオブジェクトの JS 側化** — morph 残の CustomEvent construct 1514 +
+    dispatchEvent 1500 + defaultPrevented 1207 (~4200 越境 + dispatch 毎の全キャッシュ無効化)。
+    リスナー型レジストリ (Ruby 側リスナーは entry 毎に dirty 化) + no-listener fast path。
   - `html/dom/reflection-*.html` (数千サブテスト) は全 DOM 操作が Ruby 往復するため
     60 秒 VM タイムアウトで vendor 不能
   - [ ] (a) 単純な属性 reflection の getter/setter を定義テーブルから JS 側で生成し、
@@ -879,8 +892,15 @@ crossing timeout 除去 (property read 9.8→5.1us) は導入済み・デフォ�
     VM boot                              3.79 ms
     ```
   - D1a マージ時に `Ruby matches?` / `Ruby mutate+querySelector` の低下を併記する。
-- [ ] **D4b. 実アプリプロファイル 1 本** — Turbo morph または React render の重いシナリオで
-  `DOMMY_JS_BRIDGE_PROFILE=1` の上位往復を取り、D2 の優先順を実データで裏付ける
+- [x] **D4b. 実アプリプロファイル 1 本** — 完了 (2026-07-14)
+  - `script/profile_real_app.rb` を常設 (React 300行 render/re-render + Turbo 8 morph、
+    `DOMMY_JS_BRIDGE_PROFILE=1` で phase 別の上位往復 + 実時間)。
+  - **基準値 (ROWS=300, 最適化前)**: React initial 124.8ms/13857往復、re-render 53.9ms/7229、
+    Turbo morph 405ms/51905。**上位往復の知見**: (1) React の __reactFiber$/__reactProps$
+    expando write が全て越境 (~2700)、(2) morph は Attr#name 3003 + NamedNodeMap#length 1505 +
+    Attr#value 1201 の属性イテレーションと、CustomEvent construct 1514 + dispatchEvent 1500 +
+    defaultPrevented 1207 のイベントストームが支配的。
+  - この実データで B4 の初弾 (expando JS 側化 / Attr const / factory 非変異化) を実装 (下記)。る
 
 ## 推奨順序
 
