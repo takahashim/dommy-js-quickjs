@@ -205,6 +205,9 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "dom/events/Event-dispatch-order-at-target.html" => { min_pass: 1, expected: [] },
     # A listener removed mid-dispatch (or a nested `once` self-removal) is
     # skipped even though it was in the delivery snapshot — F5.
-    "dom/events/remove-all-listeners.html" => { min_pass: 2, expected: [] }
+    "dom/events/remove-all-listeners.html" => { min_pass: 2, expected: [] },
+    # The legacy `window.event` global is the event being dispatched (a capture
+    # listener reads the bare `event` to call stopPropagation) — F3.
+    "dom/events/Event-stopPropagation-cancel-bubbling.html" => { min_pass: 1, expected: [] }
   )
 end
