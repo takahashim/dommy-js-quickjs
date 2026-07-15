@@ -208,6 +208,19 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "dom/events/remove-all-listeners.html" => { min_pass: 2, expected: [] },
     # The legacy `window.event` global is the event being dispatched (a capture
     # listener reads the bare `event` to call stopPropagation) — F3.
-    "dom/events/Event-stopPropagation-cancel-bubbling.html" => { min_pass: 1, expected: [] }
+    "dom/events/Event-stopPropagation-cancel-bubbling.html" => { min_pass: 1, expected: [] },
+    # An object EventListener ({ handleEvent }) — even a plain object literal —
+    # fires, with handleEvent looked up once per dispatch (F6). The remaining
+    # three subtests need a thrown listener/handleEvent-getter exception to be
+    # reported as an uncaught `error` event on window, which isn't implemented
+    # yet (F-error-reporting).
+    "dom/events/EventListener-handleEvent.html" => {
+      min_pass: 3,
+      expected: [
+        "rethrows errors when getting `handleEvent`",
+        "throws if `handleEvent` is falsy and not callable",
+        "throws if `handleEvent` is thruthy and not callable"
+      ]
+    }
   )
 end
