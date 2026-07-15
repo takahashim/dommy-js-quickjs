@@ -209,6 +209,24 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # The legacy `window.event` global is the event being dispatched (a capture
     # listener reads the bare `event` to call stopPropagation) — F3.
     "dom/events/Event-stopPropagation-cancel-bubbling.html" => { min_pass: 1, expected: [] },
+    # Only the nearest activation behavior runs per click (checkbox/radio,
+    # submit/reset/image button, hyperlink, label, summary→details). The
+    # remaining failures are nested <form>-in-<form> (invalid HTML built via
+    # appendChild): the inner button's form-owner resolution across the illegal
+    # nesting isn't modeled.
+    "dom/events/Event-dispatch-single-activation-behavior.html" => {
+      min_pass: 124,
+      expected: [
+        "When clicking child <FORM><INPUT type=submit></INPUT></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.",
+        "When clicking child <FORM><INPUT type=submit></INPUT></FORM> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.",
+        "When clicking child <FORM><INPUT type=image></INPUT></FORM> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.",
+        "When clicking child <FORM><INPUT type=image></INPUT></FORM> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.",
+        "When clicking child <FORM><INPUT type=reset></INPUT></FORM> of parent <FORM><BUTTON type=reset></BUTTON></FORM>, only child should be activated.",
+        "When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.",
+        "When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.",
+        "When clicking child <FORM><BUTTON type=reset></BUTTON></FORM> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated."
+      ]
+    },
     # An object EventListener ({ handleEvent }) — even a plain object literal —
     # fires, with handleEvent looked up once per dispatch (F6). The remaining
     # three subtests need a thrown listener/handleEvent-getter exception to be
