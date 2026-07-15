@@ -338,6 +338,30 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  def test_inline_event_handler_fires_on_cloned_element
+    # cloneNode copies on* content attributes at the backend, bypassing the
+    # setAttribute trap that compiles inline handlers — so the clone must be
+    # (re)wired, or its handler silently never fires. Covers the template →
+    # cloneNode pattern (WPT dom/events/Event-dispatch-single-activation).
+    html = <<~HTML
+      <html><body>
+        <template><button onclick="window.__hits = (window.__hits || 0) + 1">x</button></template>
+        <div id="host"></div>
+      </body></html>
+    HTML
+    Dommy::Browser.open(html) do |b|
+      b.execute(<<~JS)
+        const tpl = document.querySelector("template");
+        const clone = tpl.content.firstElementChild.cloneNode(true);
+        document.getElementById("host").appendChild(clone);
+        clone.click();
+      JS
+      assert_equal 1, b.evaluate("window.__hits"), "a cloned element's inline handler fires"
+      assert_equal "function", b.evaluate("typeof document.querySelector('#host button').onclick"),
+        "the clone's compiled handler is readable as the IDL property"
+    end
+  end
+
   def test_inline_handler_lexical_scope
     # An inline handler resolves bare names against [element, form owner,
     # document] before the global (the HTML "compile" scope chain).
