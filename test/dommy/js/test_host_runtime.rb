@@ -137,6 +137,29 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
     assert_equal "false,true,1", js(js_body)
   end
 
+  # A prop the host declines once is remembered per INTERFACE: a second proxy
+  # of the same interface writes it JS-side without asking the host again
+  # (frameworks write the same expando on every node of an interface).
+  def test_declined_prop_is_remembered_per_interface
+    js_body = <<~JS
+      __fakeHost.nodes[3] = { iface: __fakeHost.nodes[1].iface, methods: [], calls: {}, props: {} };
+      let declines = 0;
+      const origSet = globalThis.__rb_host_set;
+      globalThis.__rb_host_set = (h, prop, val) => {
+        const handled = origSet(h, prop, val);
+        if (!handled && prop === "customThing") declines++;
+        return handled;
+      };
+      const a = __rbHost.makeProxy(1);
+      const b = __rbHost.makeProxy(3);   // same interface as a
+      a.customThing = 1;                 // crosses, host declines, records it
+      b.customThing = 2;                 // same interface -> stays JS-side
+      b.customThing = 3;                 // own expando -> stays JS-side
+      return [declines, a.customThing, b.customThing].join(",");
+    JS
+    assert_equal "1,1,3", js(js_body)
+  end
+
   def test_proxy_identity
     assert_equal true, js("return __rbHost.makeProxy(1) === __rbHost.makeProxy(1);")
   end
