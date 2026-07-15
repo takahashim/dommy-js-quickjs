@@ -198,6 +198,13 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "dom/events/event-handler-attribute-replace-preserves-passive.html" => { min_pass: 2, expected: [] },
     # A disconnected checkbox/radio toggles on click() but fires input/change
     # only once connected (activation runs in dispatch; see dommy 2f538cf + F2).
-    "dom/events/Event-dispatch-detached-input-and-change.html" => { min_pass: 12, expected: [] }
+    "dom/events/Event-dispatch-detached-input-and-change.html" => { min_pass: 12, expected: [] },
+    # At the target, capture-registered listeners run before bubble-registered
+    # ones (the listener list is visited once per phase), and a stopPropagation
+    # is honored between the two passes — F3/F4.
+    "dom/events/Event-dispatch-order-at-target.html" => { min_pass: 1, expected: [] },
+    # A listener removed mid-dispatch (or a nested `once` self-removal) is
+    # skipped even though it was in the delivery snapshot — F5.
+    "dom/events/remove-all-listeners.html" => { min_pass: 2, expected: [] }
   )
 end
