@@ -228,17 +228,9 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
       ]
     },
     # An object EventListener ({ handleEvent }) — even a plain object literal —
-    # fires, with handleEvent looked up once per dispatch (F6). The remaining
-    # three subtests need a thrown listener/handleEvent-getter exception to be
-    # reported as an uncaught `error` event on window, which isn't implemented
-    # yet (F-error-reporting).
-    "dom/events/EventListener-handleEvent.html" => {
-      min_pass: 3,
-      expected: [
-        "rethrows errors when getting `handleEvent`",
-        "throws if `handleEvent` is falsy and not callable",
-        "throws if `handleEvent` is thruthy and not callable"
-      ]
-    }
+    # fires, with handleEvent looked up once per dispatch (F6); a thrown
+    # listener/handleEvent-getter exception is reported as an `error` event on
+    # window with event.error preserved (F-error-reporting).
+    "dom/events/EventListener-handleEvent.html" => { min_pass: 6, expected: [] }
   )
 end
