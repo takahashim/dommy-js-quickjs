@@ -182,6 +182,19 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
         "document cannot find applet",
         "applet is not styled"
       ]
-    }
+    },
+
+    # --- DOM events: dispatch / propagation / activation -----------------
+    # Event dispatch and propagation behavior — the interaction blind spot the
+    # coverage survey flagged (notes/test-coverage-strategy.md). These are
+    # testdriver-free (pure dispatchEvent/click), so they run without a shim.
+    "dom/events/Event-dispatch-bubble-canceled.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-omitted-capture.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-target-removed.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-reenter.html" => { min_pass: 1, expected: [] },
+    "dom/events/preventDefault-during-activation-behavior.html" => { min_pass: 1, expected: [] },
+    "dom/events/EventTarget-dispatchEvent-returnvalue.html" => { min_pass: 2, expected: [] },
+    "dom/events/Event-returnValue.html" => { min_pass: 7, expected: [] },
+    "dom/events/event-handler-attribute-replace-preserves-passive.html" => { min_pass: 2, expected: [] }
   )
 end
