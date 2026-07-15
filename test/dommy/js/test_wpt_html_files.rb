@@ -231,6 +231,14 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # fires, with handleEvent looked up once per dispatch (F6); a thrown
     # listener/handleEvent-getter exception is reported as an `error` event on
     # window with event.error preserved (F-error-reporting).
-    "dom/events/EventListener-handleEvent.html" => { min_pass: 6, expected: [] }
+    "dom/events/EventListener-handleEvent.html" => { min_pass: 6, expected: [] },
+
+    # --- UI events, driven through the testdriver.click shim ---------------
+    # test_driver.click(el) synthesizes the full primary-button sequence (see
+    # test/support/wpt_resources.rb), so these run without a real automation
+    # backend. Coordinate-driven tests use the Actions API (unshimmed) and are
+    # out of scope — Dommy has no layout.
+    "uievents/order-of-events/mouse-events/click-on-div.html" => { min_pass: 1, expected: [] },
+    "uievents/order-of-events/mouse-events/click-cancel.html" => { min_pass: 1, expected: [] }
   )
 end
