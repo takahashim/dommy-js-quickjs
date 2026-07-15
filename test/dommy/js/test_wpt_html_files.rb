@@ -58,6 +58,7 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "html/semantics/forms/the-select-element/common-HTMLOptionsCollection-namedItem.html" => { min_pass: 6, expected: [] },
     "html/semantics/forms/the-output-element/output-validity.html" => { min_pass: 1, expected: [] },
     "html/semantics/forms/the-label-element/labelable-elements.html" => { min_pass: 26, expected: [] },
+    "html/semantics/forms/the-label-element/clicking-interactive-content.html" => { min_pass: 36, expected: [] },
     "html/semantics/forms/the-button-element/button-labels.html" => { min_pass: 1, expected: [] },
     # Constraint validation (ValidityState + checkValidity/reportValidity), now
     # reachable via the :valid/:invalid selectors too.
