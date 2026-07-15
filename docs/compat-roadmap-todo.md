@@ -692,7 +692,7 @@ getComputedStyle・Shadow DOM・Custom Elements は実装済み。大規模な�
     EventTarget の**追加専用** type レジストリ (Ruby が権威 = 同期問題が構造的に無い) で
     未リッスンなら通常 dispatch を実行し、JS 側は epoch バンプをスキップ +
     defaultPrevented を own-prop shadow 化 (preventDefault/initEvent/returnValue/再dispatch で
-    shadow 整合)。**実測**: morph 405→~330ms、51905→41081 越境 (D4b 基準から累積 -19%/-21%)。
+    shadow 整合)。**実測**: morph 405→~330ms、約25953→20541 越境 (D4b 基準から累積 -19%/-21%)。※越境数は 2026-07-15 に profiler の __total__ 二重計上を修正した実数（旧記載 51905→41081 は約2倍）。相対%は不変。
     エッジテスト 9 本追加、全 5 スイート green。
   - **調査して見送り: NamedNodeMap の読み取りバッチ RPC** — Ruby 側の NamedNodeMap/Attr
     ラッパーは identity 安定 (item(0).equal?(item(0)) == true) で proxy の const キャッシュは
@@ -918,8 +918,8 @@ crossing timeout 除去 (property read 9.8→5.1us) は導入済み・デフォ�
 - [x] **D4b. 実アプリプロファイル 1 本** — 完了 (2026-07-14)
   - `script/profile_real_app.rb` を常設 (React 300行 render/re-render + Turbo 8 morph、
     `DOMMY_JS_BRIDGE_PROFILE=1` で phase 別の上位往復 + 実時間)。
-  - **基準値 (ROWS=300, 最適化前)**: React initial 124.8ms/13857往復、re-render 53.9ms/7229、
-    Turbo morph 405ms/51905。**上位往復の知見**: (1) React の __reactFiber$/__reactProps$
+  - **基準値 (ROWS=300, 最適化前)**: React initial 124.8ms/約6929往復、re-render 53.9ms/約3615、
+    Turbo morph 405ms/約25953（往復数は __total__ 二重計上を修正した実数。旧記載は約2倍）。**上位往復の知見**: (1) React の __reactFiber$/__reactProps$
     expando write が全て越境 (~2700)、(2) morph は Attr#name 3003 + NamedNodeMap#length 1505 +
     Attr#value 1201 の属性イテレーションと、CustomEvent construct 1514 + dispatchEvent 1500 +
     defaultPrevented 1207 のイベントストームが支配的。

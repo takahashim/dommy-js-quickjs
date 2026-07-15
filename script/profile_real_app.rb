@@ -29,11 +29,17 @@ def phase(harness, label)
   t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   yield
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0
-  # crossing_counts is {category => {member => count}}; flatten for ranking.
-  counts = runtime.bridge_crossing_counts.flat_map do |category, members|
-    members.map { |member, n| ["#{category} #{member}", n] }
+  # crossing_counts is {category => {member => count}} where each category ALSO
+  # carries a "__total__" pseudo-member equal to that category's real crossing
+  # count. So the true total is the sum of the __total__ values, and the
+  # per-member ranking must EXCLUDE __total__ (summing everything double-counts
+  # every member-bearing crossing).
+  raw = runtime.bridge_crossing_counts
+  total = raw.sum { |_category, members| members["__total__"] || members.values.sum }
+  counts = raw.flat_map do |category, members|
+    members.reject { |member, _| member == "__total__" }
+           .map { |member, n| ["#{category} #{member}", n] }
   end
-  total = counts.sum { |_, n| n }
   puts format("\n== %-42s %8.1f ms  %6d crossings (%.1f us/crossing)",
     label, elapsed * 1000, total, total.zero? ? 0 : elapsed * 1_000_000 / total)
   counts.sort_by { |_, n| -n }.first(TOP).each do |name, n|
