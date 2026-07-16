@@ -209,6 +209,16 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     # The legacy `window.event` global is the event being dispatched (a capture
     # listener reads the bare `event` to call stopPropagation) — F3.
     "dom/events/Event-stopPropagation-cancel-bubbling.html" => { min_pass: 1, expected: [] },
+    # More testdriver-free dispatch/propagation coverage (harvest cont'd).
+    "dom/events/event-disabled-dynamic.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-click.tentative.html" => { min_pass: 6, expected: [] },
+    "dom/events/Event-dispatch-handlers-changed.html" => { min_pass: 1, expected: [] },
+    "dom/events/Event-dispatch-other-document.html" => { min_pass: 1, expected: [] },
+    "dom/events/event-src-element-nullable.html" => { min_pass: 1, expected: [] },
+    "dom/events/KeyEvent-initKeyEvent.html" => { min_pass: 3, expected: [] },
+    "dom/events/label-default-action.html" => { min_pass: 1, expected: [] },
+    "dom/events/window-composed-path.html" => { min_pass: 1, expected: [] },
+    "dom/events/window-event-restored-after-throwing-onerror.html" => { min_pass: 1, expected: [] },
     # Only the nearest activation behavior runs per click (checkbox/radio,
     # submit/reset/image button, hyperlink, label, summary→details). The
     # remaining failures are nested <form>-in-<form> (invalid HTML built via
