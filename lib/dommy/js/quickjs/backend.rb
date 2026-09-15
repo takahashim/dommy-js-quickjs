@@ -146,6 +146,29 @@ module Dommy
           @vm.module_loader = callable
         end
 
+        # SPIKE (module-preload): whether the quickjs gem exposes the
+        # process-global module registry (register_module + preload).
+        def supports_module_registry?
+          ::Quickjs.respond_to?(:register_module) && ::Quickjs.respond_to?(:_preload_modules)
+        end
+
+        # SPIKE: whether `name` is already in the process-global registry.
+        def module_registered?(name)
+          ::Quickjs._module_registered?(name)
+        end
+
+        # SPIKE: register a module's source in the process-global registry under
+        # its canonical name (compiled to bytecode once, reused across VMs).
+        def register_module(name, source)
+          ::Quickjs.register_module(name, source: source)
+        end
+
+        # SPIKE: read the registered bytecode for `names` into THIS VM's module
+        # map after construction.
+        def preload_modules(names)
+          ::Quickjs._preload_modules(@vm, Array(names))
+        end
+
         # Evaluate `source` as an ES module (its `import`s resolved through the
         # module loader). `* as` with no globalization runs it for side effects.
         def import_module(source)

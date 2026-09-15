@@ -148,6 +148,12 @@ module Dommy
           @backend.module_loader = callable
         end
 
+        # SPIKE (module-preload): process-global ES-module bytecode cache.
+        def supports_module_registry? = @backend.supports_module_registry?
+        def module_registered?(name) = @backend.module_registered?(name)
+        def register_module(name, source) = @backend.register_module(name, source)
+        def preload_modules(names) = @backend.preload_modules(names)
+
         # Evaluate an inline `<script type="module">` body as an ES module (run
         # for side effects). Bare specifiers / absolute paths in its imports
         # resolve through the module loader. Drains microtasks afterward.

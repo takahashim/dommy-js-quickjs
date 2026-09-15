@@ -5,6 +5,9 @@ source "https://rubygems.org"
 # Specify your gem's dependencies in dommy-js-quickjs.gemspec
 gemspec
 
+# SPIKE (module-preload)
+gem "quickjs", github: "hmsk/quickjs.rb", ref: "50cc102", submodules: true
+
 gem "irb"
 gem "rake", "~> 13.0"
 

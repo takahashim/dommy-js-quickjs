@@ -11,10 +11,16 @@ require "test_helper"
 class Dommy::Js::TestSourceGuard < Minitest::Test
   SG = Dommy::Js::Quickjs::SourceGuard
 
-  # The raw QuickJS construct fails to compile; the rewritten one must succeed.
-  def test_for_of_yield_compiles_after_rewrite
+  # Older QuickJS builds reject the raw construct with "stack underflow";
+  # current builds compile it.  In both cases the rewrite must remain valid so
+  # Dommy can safely retry on engines that still exhibit the bug.
+  def test_for_of_yield_rewrite_is_valid_on_supported_quickjs_builds
     bad = "(function*(){for(var f of (yield 1, [1,2])) f})"
-    assert_raises(::Quickjs::RuntimeError) { ::Quickjs::VM.new.eval_code(bad) }
+    begin
+      refute_nil ::Quickjs::VM.new.eval_code(bad), "raw source returns a generator when the engine has fixed the bug"
+    rescue ::Quickjs::RuntimeError => e
+      assert SG.relevant_error?(e), "only the known stack-underflow failure is eligible for the retry"
+    end
 
     good = SG.fix_for_of_yield(bad)
     refute_equal bad, good
