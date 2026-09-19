@@ -565,6 +565,28 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     rt&.dispose
   end
 
+  # An element the page is already holding when the definition lands is upgraded
+  # in place (HTML "upgrade an element" mutates the element, it does not replace
+  # it): the reference the script holds becomes an instance of the class. And it
+  # stays the node's one JS wrapper — a query run afterwards finds that same
+  # object, as it would in a browser.
+  def test_custom_element_upgrade_keeps_the_reference_the_page_holds
+    @rt.install_window(@win)
+    @rt.execute(<<~JS)
+      document.querySelector("#root").appendChild(document.createElement("my-el"));
+      globalThis.el = document.querySelector("my-el");
+      globalThis.MyEl = class extends HTMLElement {
+        constructor() { super(); this.upgraded = true; }
+        hello() { return "hi"; }
+      };
+      customElements.define("my-el", MyEl);
+    JS
+    assert_equal true, @rt.evaluate("globalThis.el instanceof globalThis.MyEl")
+    assert_equal true, @rt.evaluate("globalThis.el.upgraded === true")
+    assert_equal "hi", @rt.evaluate("globalThis.el.hello()")
+    assert_equal true, @rt.evaluate('globalThis.el === document.querySelector("my-el")')
+  end
+
   # customElements.whenDefined stays pending until the name is defined, then
   # resolves with the constructor (not an early resolve with undefined).
   def test_custom_element_when_defined_pending
