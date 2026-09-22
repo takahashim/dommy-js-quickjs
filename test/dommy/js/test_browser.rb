@@ -207,7 +207,7 @@ class Dommy::Js::TestBrowser < Minitest::Test
 
   def test_strict_mode_raises_on_uncaught_script_error
     html = '<html><body><script>throw new Error("boom");</script></body></html>'
-    err = assert_raises(Dommy::Browser::JsError) do
+    err = assert_raises(Dommy::JsError) do
       Dommy::Browser.open(html)
     end
     assert_includes err.message, "boom"
