@@ -60,22 +60,34 @@ module Dommy
         #   - Array            -> recurse (so element collections wrap per item)
         #   - JS undefined      -> nil
         #   - Dommy::Element    -> Capybara::Dommy::Node (covers HTML/SVG subclasses)
-        #   - other bridge obj  -> nil (Document/Text/Comment/Fragment/NodeList/
-        #                          Window have no Capybara representation)
+        #   - other host object -> nil (Document/Text/Comment/Fragment/NodeList/
+        #                          Window/Blob/FormData have no Capybara
+        #                          representation)
         #   - primitive/Hash    -> as-is
         def decode_for_capybara(value)
-          return nil if value.equal?(::Dommy::Bridge::UNDEFINED)
+          return nil if js_undefined?(value)
 
           case value
-          when Array
-            value.map { |element| decode_for_capybara(element) }
-          when ::Quickjs::Value::UNDEFINED
-            nil
-          when ::Dommy::Element
-            ::Capybara::Dommy::Node.new(self, value)
-          else
-            value.respond_to?(:__js_get__) ? nil : value
+          when Array then value.map { |element| decode_for_capybara(element) }
+          when ::Dommy::Element then ::Capybara::Dommy::Node.new(self, value)
+          else host_object?(value) ? nil : value
           end
+        end
+
+        # JS `undefined` arrives as either the engine-neutral sentinel the bridge
+        # decodes to, or — on the paths that skip that decode — the gem's own.
+        def js_undefined?(value)
+          value.equal?(::Dommy::Bridge::UNDEFINED) || value.equal?(::Quickjs::Value::UNDEFINED)
+        end
+
+        # Whether `value` is a Dommy object the page can read properties off
+        # (`__js_get__` is what the bridge calls to do that). Everything that
+        # answers to it is a DOM-side object, and the ones Capybara can represent
+        # were already taken by the branches above — so what is left has no
+        # representation and becomes nil rather than leaking a host object into a
+        # Capybara assertion.
+        def host_object?(value)
+          value.respond_to?(:__js_get__)
         end
       end
 

@@ -34,6 +34,11 @@ module Dommy
         INTL_POLYFILL_JS = payload("intl_polyfill.js")
         WASM_STUB_JS = payload("wasm_stub.js")
 
+        # Nothing outside installs a payload by hand; the methods below are the
+        # way in.
+        private_constant :TIMER_GLOBALS_JS, :BROWSER_GLOBALS_JS, :WINDOW_BUILTINS_JS,
+          :INTL_POLYFILL_JS, :WASM_STUB_JS
+
         def initialize(backend)
           @backend = backend
         end

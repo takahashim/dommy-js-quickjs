@@ -29,7 +29,10 @@ module Dommy
             @mutex.synchronize { @cache.clear }
           end
 
-          def size = @cache.size
+          # Under the mutex like the others: one lock guards this cache, and a
+          # reader that steps outside it is the kind of inconsistency that only
+          # shows up under load.
+          def size = @mutex.synchronize { @cache.size }
         end
       end
     end

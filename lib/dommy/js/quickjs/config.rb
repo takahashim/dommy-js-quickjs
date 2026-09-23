@@ -35,7 +35,15 @@ module Dommy
           env.positive? ? env : DEFAULT_TIMEOUT_MSEC
         end
 
-        def memory_limit = DEFAULT_MEMORY_LIMIT
+        # The VM's memory ceiling, in bytes. Overridable like the timeout, in MB
+        # for legibility: an out-of-memory poisons the VM and stops the page's
+        # JavaScript for good, so being able to lower it is how that path gets
+        # exercised deliberately (and to raise it for a heavier page than the
+        # default was sized for).
+        def memory_limit
+          mb = ENV["DOMMY_JS_MEMORY_LIMIT_MB"].to_i
+          mb.positive? ? mb * 1024 * 1024 : DEFAULT_MEMORY_LIMIT
+        end
 
         # Whether to keep the gem's per-crossing Ruby `Timeout.timeout` (see
         # Backend's SkipCrossingTimeout). Off by default: it costs ~4us on every

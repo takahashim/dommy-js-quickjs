@@ -26,7 +26,9 @@ module Dommy
           @bridge = Dommy::Js::HostBridge.new(@backend)
           @environment = BrowserEnvironment.new(@backend)
           @errors = ErrorTranslator.new(@backend, @bridge)
-          @loop = EventLoop.new(@backend) { |error| @callback_error_listener&.call(error) }
+          @loop = EventLoop.new(@backend, scheduler: -> { @window&.scheduler }) do |error|
+            @callback_error_listener&.call(error)
+          end
           @callback_error_listener = nil
           @track_rejections = Config.track_rejections?
           # Install the JS-side Promise rejection recorder (HostBridge registers
@@ -46,7 +48,6 @@ module Dommy
         # `win.scheduler.advance_time(ms)`).
         def install_window(win)
           @window = win
-          @loop.window = win
           define_host_object("window", win)
           @bridge.window = win
           install_promise_rejection_hook
@@ -296,7 +297,7 @@ module Dommy
           # An out-of-memory in a timer callback poisons the whole VM: the page's
           # JS is dead from here on, so flag it (and report once) — not just this
           # one callback.
-          @loop.note_halted(error) if @backend.poisoned?
+          @loop.note_halted_if_poisoned(error)
           @callback_error_listener&.call(@errors.with_timer_origin(error, timer))
           true
         end

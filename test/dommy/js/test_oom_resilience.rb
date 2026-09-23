@@ -32,6 +32,41 @@ class Dommy::Js::TestOomResilience < Minitest::Test
     assert_nil backend.call_js("Math.max", 1, 2)
   end
 
+  # The guard has to cover EVERY way of running something, or the answer depends
+  # on which one the host happened to reach for: an inline script quietly did
+  # nothing after an out-of-memory while an external (bytecode) one and
+  # #evaluate raised "VM is poisoned" from a different place each time.
+  def test_every_way_of_running_something_no_ops_on_a_poisoned_vm
+    backend = Backend.new(memory_limit: 8 * 1024 * 1024)
+    compiled = Backend.compile("globalThis.ran = true;", filename: "probe.js")
+
+    assert_raises(::Quickjs::RuntimeError) do
+      backend.eval("var a = []; for (;;) { a.push(new Array(100000).fill(7)); }")
+    end
+    assert backend.poisoned?
+
+    assert_nil backend.eval_awaited("1 + 1"), "the awaited eval behind #evaluate"
+    assert_nil backend.run_compiled(compiled), "the bytecode path behind an external script"
+    assert_nil backend.run_bundle("probe.js", "globalThis.ran = true;"), "an engine bundle"
+    assert_nil backend.import_module_url("http://example.test/m.js"), "an ES module"
+    assert_nil backend.run_gc
+  end
+
+  def test_the_memory_ceiling_honors_the_env_override
+    original = ENV["DOMMY_JS_MEMORY_LIMIT_MB"]
+
+    ENV.delete("DOMMY_JS_MEMORY_LIMIT_MB")
+    assert_equal Config::DEFAULT_MEMORY_LIMIT, Config.memory_limit
+
+    ENV["DOMMY_JS_MEMORY_LIMIT_MB"] = "16"
+    assert_equal 16 * 1024 * 1024, Config.memory_limit
+
+    ENV["DOMMY_JS_MEMORY_LIMIT_MB"] = "0" # junk/zero keeps the default, as the timeout does
+    assert_equal Config::DEFAULT_MEMORY_LIMIT, Config.memory_limit
+  ensure
+    ENV["DOMMY_JS_MEMORY_LIMIT_MB"] = original
+  end
+
   # The per-eval timeout is the ceiling on how long QuickJS holds the thread in C
   # (blocking a deferred Ctrl-C). An interactive host lowers it via the env var;
   # the library default is unchanged when unset.

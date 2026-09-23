@@ -27,15 +27,19 @@ module Dommy
         # that always asks for another frame).
         DEFAULT_MAX_ITERATIONS = 1000
 
+        # `scheduler` is asked for Dommy's scheduler each time the loop runs,
+        # rather than handed one at construction: a Runtime is built before its
+        # window exists, and the window is the scheduler's owner. Keeping it a
+        # question avoids a second copy of the window living here.
+        #
         # `on_halt` is called with the exception the first time the VM is found
         # poisoned, and never again.
-        def initialize(backend, &on_halt)
+        def initialize(backend, scheduler:, &on_halt)
           @backend = backend
+          @scheduler = scheduler
           @on_halt = on_halt
           @halted = false
         end
-
-        attr_accessor :window
 
         # Drain the engine's microtask queue. The one operation every policy
         # starts from, and the one a host can ask for on its own.
@@ -98,6 +102,17 @@ module Dommy
           end
         end
 
+        # Record a halt if the VM is in fact dead, and say whether it was. The
+        # caller (a timer callback that raised) does not have to ask the backend
+        # itself: an out-of-memory there poisons the whole VM, not just that one
+        # callback.
+        def note_halted_if_poisoned(error)
+          return false unless @backend.poisoned?
+
+          note_halted(error)
+          true
+        end
+
         # The VM is poisoned. Surface the failure ONCE (a repeated drain would
         # otherwise report it every tick) so the host sees that the page's
         # JavaScript stopped, then leave it to the no-op guards.
@@ -115,7 +130,7 @@ module Dommy
         # is nothing left to do, when there is no scheduler to drive, or when the
         # iteration bound runs out.
         def pump(max_iterations)
-          scheduler = @window&.scheduler
+          scheduler = @scheduler.call
           max_iterations.times do
             drain_microtasks
             break unless scheduler

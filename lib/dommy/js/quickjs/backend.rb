@@ -62,11 +62,15 @@ module Dommy
             (@vm.respond_to?(:disposed?) && @vm.disposed?)
         end
 
-        def eval(js)
-          return if poisoned?
-
-          @vm.eval_code(js, async: false)
-        end
+        # Every entry point that RUNS something in the VM goes through #guarded,
+        # so a dead VM answers the same way whichever one a host reached for. It
+        # used to guard three of the six: an inline script quietly did nothing
+        # after an out-of-memory while an external (bytecode) one and #evaluate
+        # raised "VM is poisoned" from a different place each time.
+        #
+        # Registering a host function or a listener is not guarded: none of them
+        # runs JS, and they all happen while the VM is still alive.
+        def eval(js) = guarded { @vm.eval_code(js, async: false) }
 
         # Compile JS source to reusable bytecode (parsed once, via a throwaway
         # VM). Run it on any number of fresh VMs with #run_compiled — far cheaper
@@ -89,9 +93,7 @@ module Dommy
 
         # Execute precompiled bytecode (a Quickjs::Runnable) on this VM in global
         # scope — equivalent to #eval of its source, without the parse cost.
-        def run_compiled(runnable)
-          runnable.run(on: @vm)
-        end
+        def run_compiled(runnable) = guarded { runnable.run(on: @vm) }
 
         # Run a source bundle that is identical across VMs (the bridge's host
         # runtime, the Observable polyfill): compile it to bytecode once per
@@ -104,9 +106,7 @@ module Dommy
 
         # Async eval: the gem awaits the top-level result and drains the
         # microtask queue, so JS `await`/Promises resolve before returning.
-        def eval_awaited(js)
-          @vm.eval_code(js, async: true)
-        end
+        def eval_awaited(js) = guarded { @vm.eval_code(js, async: true) }
 
         # Install the ESM module resolver: a callable `(specifier, importer) ->
         # source String | { code:, as: } | nil` the engine consults for every
@@ -119,24 +119,16 @@ module Dommy
         # The importer of its relative imports is `url`, so they resolve
         # correctly — unlike an inline module's synthetic filename.
         def import_module_url(url)
-          @vm.import("* as __dommy_mod", filename: url, code_to_expose: "")
+          guarded { @vm.import("* as __dommy_mod", filename: url, code_to_expose: "") }
         end
 
         def define_host_function(name, &block)
           @vm.define_function(name, &block)
         end
 
-        def call_js(path, *args)
-          return if poisoned?
+        def call_js(path, *args) = guarded { @vm.call(path, *args) }
 
-          @vm.call(path, *args)
-        end
-
-        def drain_microtasks
-          return if poisoned?
-
-          @vm.drain_jobs!
-        end
+        def drain_microtasks = guarded { @vm.drain_jobs! }
 
         # Register a handler for promise rejections that reach the microtask
         # queue with no `.catch` — frameworks (Turbo, …) often swallow these,
@@ -160,12 +152,21 @@ module Dommy
           @vm.on_log(&block)
         end
 
-        def run_gc
-          @vm.gc!
-        end
+        def run_gc = guarded { @vm.gc! }
 
         def dispose
           @vm.dispose!
+        end
+
+        private
+
+        # Run `block` unless the VM is dead, in which case the answer is nil —
+        # the "browsing never crashes" contract: the page's JS has stopped, and
+        # the host has already been told once (see EventLoop#note_halted).
+        def guarded
+          return if poisoned?
+
+          yield
         end
       end
     end
