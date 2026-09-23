@@ -73,6 +73,9 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
   def setup
     @vm = Quickjs::VM.new(timeout_msec: 60_000)
     @vm.eval_code(FAKE_HOST_JS, async: false)
+    # The spec-surface tables the runtime destructures, in the order the bridge
+    # evaluates them (HostBridge#seed_runtime!).
+    @vm.eval_code(Dommy::Js::HostBridge::WEBIDL_TABLES_JS, async: false)
     @vm.eval_code(Dommy::Js::HostBridge::HOST_RUNTIME_JS, async: false)
     @vm.eval_code("__rbHost.seedInterfaces(#{JSON.generate(Dommy::Js::DomInterfaces::BASE_CHAINS)});", async: false)
   end
