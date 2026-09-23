@@ -26,7 +26,7 @@ gem "quickjs", github: "takahashim/quickjs.rb", ref: "ef60ed5",
   submodules: true # the QuickJS C sources are a submodule
 
 # In the dommy monorepo, use the working trees next door; a standalone clone
-# (CI included) falls back to the released gems. Both sides carry the same set,
+# (CI included) falls back to dommy's main on GitHub. Both sides carry the same set,
 # so CI runs the Capybara and Rack suites too rather than skipping 60 tests.
 dommy_gems = File.expand_path("../dommy/gems", __dir__)
 if File.directory?(dommy_gems)
@@ -42,9 +42,14 @@ if File.directory?(dommy_gems)
   # test a local sibling checkout against this suite.
   # gem "makiri", path: File.expand_path("../makiri", __dir__)
 else
-  gem "dommy"
+  # This gem tracks dommy's main (the bridge wire tags, Location's exotic
+  # shape), which runs ahead of the released gems; pull the monorepo from
+  # GitHub so CI tests against what the working tree does.
+  git "https://github.com/takahashim/dommy.git", branch: "main", glob: "gems/*/*.gemspec" do
+    gem "dommy"
+    gem "capybara-dommy"
+    gem "dommy-rack"
+  end
 
   gem "capybara"
-  gem "capybara-dommy"
-  gem "dommy-rack"
 end
