@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "quickjs"
-require_relative "source_guard"
 
 # Performance: the quickjs gem wraps EVERY host-function call — every JS->Ruby
 # DOM crossing (__rb_host_get / _call / _set, …) — in `Timeout.timeout` to bound
@@ -80,15 +79,6 @@ module Dommy
           return if poisoned?
 
           @vm.eval_code(js, async: false)
-        rescue ::Quickjs::RuntimeError => e
-          # A QuickJS codegen bug rejects `for-of` with a `yield` in the iterable
-          # ("stack underflow") — rewrite that construct and retry once.
-          raise unless SourceGuard.relevant_error?(e)
-
-          guarded = SourceGuard.fix_for_of_yield(js)
-          raise if guarded.equal?(js) || guarded == js
-
-          @vm.eval_code(guarded, async: false)
         end
 
         # Compile JS source to reusable bytecode (parsed once, via a throwaway
@@ -97,14 +87,6 @@ module Dommy
         # bundles are identical across VMs).
         def self.compile(source, filename: "<compiled>")
           ::Quickjs.compile(source, filename: filename)
-        rescue ::Quickjs::RuntimeError => e
-          # See #eval: work around the for-of/yield-in-iterable codegen bug.
-          raise unless SourceGuard.relevant_error?(e)
-
-          guarded = SourceGuard.fix_for_of_yield(source)
-          raise if guarded.equal?(source) || guarded == source
-
-          ::Quickjs.compile(guarded, filename: filename)
         end
 
         # Process-global cache for the engine-internal runtime bundles run via
