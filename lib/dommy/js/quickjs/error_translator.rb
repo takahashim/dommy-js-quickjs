@@ -16,6 +16,12 @@ module Dommy
         # An engine frame in a converted exception's backtrace (`at f
         # (<code>:1:34)`). A host-raised one carries Ruby frames instead
         # (`/…/lib/dommy/js/quickjs/backend.rb:82:in '…'`).
+        #
+        # Core has a stricter counterpart (Internal::ExceptionReport::STACK_FRAME)
+        # that PARSES a frame into file/line/column for ErrorEvent. This one only
+        # asks whether a frame came from JS at all, and stays here because the
+        # answer is engine-specific: what a frame looks like is QuickJS's
+        # business, and another backend's would differ.
         JS_FRAME = /\A\s*at\s/
         private_constant :JS_FRAME
 

@@ -105,6 +105,12 @@ module Dommy
 
         # Ruby value -> wasm-tagged JS value. Public so the embedder's
         # #on_invoke dispatcher can pack the values it hands back into JS.
+        #
+        # Deliberately not core's Marshaller, which shares the same WireTags but
+        # answers a bigger question: it wraps host objects as DOM proxies, binds
+        # callbacks and resolves interfaces against a handle table. A wasm guest
+        # has none of that — every non-primitive is an opaque ref it asks about
+        # through #get / #call — so what it needs is the tags and nothing else.
         def pack(value)
           case value
           when JSValue then {WireTags::JS_REF => value.ref}
