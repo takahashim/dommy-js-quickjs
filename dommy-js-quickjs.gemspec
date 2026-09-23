@@ -35,6 +35,9 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
+  # NOTE: the tests need quickjs's HTML-timed unhandled-rejection reporting,
+  # which is unreleased; the Gemfile pins the fork branch of hmsk/quickjs.rb#141
+  # until it ships. 0.21.0 is the floor everything else here works against.
   spec.add_dependency "quickjs", "~> 0.21.0"
   spec.add_dependency "dommy", ">= 0.10.0"
 

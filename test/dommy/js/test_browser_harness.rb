@@ -20,7 +20,7 @@ class Dommy::Js::TestBrowserHarness < Minitest::Test
     @h.pump
     err = @h.errors.find { |e| e.message.include?("kaboom") }
     refute_nil err, "expected the swallowed rejection to be captured"
-    assert_kind_of Quickjs::TypeError, err
+    assert_includes err.message, "TypeError", "the host log names the kind of error"
     assert(Array(err.backtrace).any? { |line| line.include?("boom") }, "expected a JS stack frame")
   end
 

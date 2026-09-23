@@ -12,6 +12,16 @@ class Dommy::Js::TestRejectionDetail < Minitest::Test
     @rt&.dispose
   end
 
+  # The tracker enriches the engine's detail-less report, which only exists on
+  # the `on_unhandled_rejection` path. An engine with the JS rejection hook hands
+  # over the reason itself, so there is nothing left to enrich and this whole
+  # mechanism is bypassed.
+  def skip_when_hooked
+    return unless Dommy::Js::Quickjs::Backend.new.respond_to?(:promise_rejection_hook=)
+
+    skip "superseded by the JS rejection hook, which carries the real reason"
+  end
+
   def run_with(env)
     ENV["DOMMY_JS_DEBUG_REJECTIONS"] = env
     win = Dommy.parse("<html><body></body></html>")
@@ -28,6 +38,7 @@ class Dommy::Js::TestRejectionDetail < Minitest::Test
   end
 
   def test_rich_detail_is_surfaced_when_enabled
+    skip_when_hooked
     errors = run_with("1")
 
     assert errors.any? { |m| m.include?("BOOM") && m.include?("a real detail") && m.include?("extensions") },
@@ -35,6 +46,7 @@ class Dommy::Js::TestRejectionDetail < Minitest::Test
   end
 
   def test_opaque_by_default
+    skip_when_hooked
     errors = run_with("")
 
     assert_includes errors, "[object Object]", "default: no tracker, the engine's opaque report"

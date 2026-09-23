@@ -10,14 +10,15 @@ gem "rake", "~> 13.0"
 
 gem "minitest", "~> 5.16"
 
-# TEMPORARY: the released quickjs reports an unhandled rejection the moment a
-# promise rejects, rather than at the end of the microtask checkpoint as HTML
-# requires. Correct code is misreported — `Promise.reject(x).catch(...)` and
-# `try { await rejecting() } catch {}` both attach their handler later in the
-# same checkpoint — which a strict host then fails a test on. This branch
-# implements HTML's timing. Drop the override (and relax the gemspec) once it
-# is released upstream: https://github.com/hmsk/quickjs.rb/pull/85
-gem "quickjs", github: "takahashim/quickjs.rb", branch: "fix/unhandled-rejection-checkpoint-timing",
+# TEMPORARY: the released quickjs (0.21.0) reports an unhandled rejection the
+# moment a promise rejects, rather than at the end of the microtask checkpoint
+# as HTML requires. Correct code is misreported — `Promise.reject(x).catch(...)`
+# and `try { await rejecting() } catch {}` both attach their handler later in
+# the same checkpoint — which a strict host then fails a test on. Pinned to the
+# fork branch that implements HTML's timing, open upstream as
+# https://github.com/hmsk/quickjs.rb/pull/141. Drop the override (and relax the
+# gemspec) once it is released.
+gem "quickjs", github: "takahashim/quickjs.rb", ref: "668d4c1",
   submodules: true # the QuickJS C sources are a submodule
 
 # In the dommy monorepo, use the working trees next door; a standalone clone

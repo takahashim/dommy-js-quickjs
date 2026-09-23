@@ -42,6 +42,7 @@ module Dommy
           @window = win
           define_host_object("window", win)
           @bridge.window = win
+          install_promise_rejection_hook
           # A runaway timer/rAF callback (busy loop) is force-killed by the gem's
           # eval timeout, surfacing as a Quickjs::InterruptedError out of the host
           # call. Route it through the scheduler's error hook so it is recorded as
@@ -356,13 +357,40 @@ module Dommy
           self
         end
 
+        # Hand rejections to the JS hook rather than to a Ruby callback, when the
+        # engine has one. It is called with the promise and the reason as the
+        # values the page threw, which is the whole point: an exception the
+        # engine already converted has lost both, and the page ends up with an
+        # object it cannot read. The hook also reports the other half of HTML's
+        # tracking, `rejectionhandled`, which a Ruby callback never sees.
+        #
+        # No-op on an engine without it; #on_unhandled_rejection then stays the
+        # route, with the losses that implies.
+        def install_promise_rejection_hook
+          return unless @backend.respond_to?(:promise_rejection_hook=)
+
+          @backend.promise_rejection_hook = "__rbHost.onPromiseRejection"
+          @js_rejection_hook = true
+        rescue ::StandardError
+          @js_rejection_hook = false
+        end
+
+        # Whether rejections arrive through the JS hook. A host that also relays
+        # #on_unhandled_rejection would otherwise report each rejection twice.
+        def js_rejection_hook? = !!@js_rejection_hook
+
         # Surface otherwise-swallowed JS promise rejections (see Backend).
+        # Goes quiet once the JS hook is installed: both would fire for the same
+        # rejection, and the hook carries strictly more.
         def on_unhandled_rejection(&block)
-          if @track_rejections
-            @backend.on_unhandled_rejection { |err| block.call(enrich_rejection(err)) }
-          else
-            @backend.on_unhandled_rejection(&block)
+          # Decided when a rejection actually arrives, not now: a host registers
+          # this before #install_window, which is where the hook goes in.
+          relay = lambda do |err|
+            next if js_rejection_hook?
+
+            block.call(@track_rejections ? enrich_rejection(err) : err)
           end
+          @backend.on_unhandled_rejection(&relay)
           self
         end
 

@@ -29,7 +29,17 @@ module Dommy
         @runtime = Dommy::Js::Quickjs::Runtime.new
         @errors = []
         @logs = []
-        @runtime.on_unhandled_rejection { |err| @errors << err }
+        # Collect what the PAGE left unhandled, the way the real hosts do: every
+        # uncaught error funnels through the window, so this catches script and
+        # callback exceptions as well as rejections. The relay below covers an
+        # engine with no JS rejection hook, where rejections never reach the
+        # window on their own; it goes quiet when the hook is installed.
+        @window.__internal_on_unhandled_error__ { |err| @errors << err }
+        @runtime.on_unhandled_rejection do |err|
+          @window.__internal_report_rejection__(
+            Dommy::Internal::ExceptionReport.error_value(err), host_error: err
+          )
+        end
         @runtime.on_log { |log| @logs << log }
         @runtime.define_host_object("document", @window.document)
         @runtime.install_window(@window)

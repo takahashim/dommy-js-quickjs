@@ -182,6 +182,15 @@ module Dommy
           @vm.on_unhandled_rejection(&block)
         end
 
+        # Point the engine's promise-rejection hook at a JS function, named by an
+        # expression evaluated once in global scope. Only defined when the engine
+        # supports it, so callers can feature-detect with respond_to?.
+        if ::Quickjs::VM.method_defined?(:promise_rejection_hook=)
+          def promise_rejection_hook=(expression)
+            @vm.promise_rejection_hook = expression
+          end
+        end
+
         # Register a handler for console.(log|info|debug|warn|error). The block
         # receives a log object (#severity / #to_s / #raw).
         def on_log(&block)
