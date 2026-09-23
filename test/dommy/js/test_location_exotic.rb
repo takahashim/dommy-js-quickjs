@@ -104,6 +104,13 @@ class Dommy::Js::TestLocationExotic < Minitest::Test
     JS
   end
 
+  # [SameObject]: a page that holds `location.ancestorOrigins` holds the same
+  # object the next read would give it.
+  def test_ancestor_origins_is_the_same_object
+    assert(js("return location.ancestorOrigins === location.ancestorOrigins;"))
+    assert_equal 0, js("return location.ancestorOrigins.length;")
+  end
+
   # A page can hold on to a removed frame's location. What it holds is inert.
   def test_location_without_a_browsing_context_is_inert
     assert_equal "about:blank,null,0", js(<<~JS)
