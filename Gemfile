@@ -14,11 +14,15 @@ gem "minitest", "~> 5.16"
 # moment a promise rejects, rather than at the end of the microtask checkpoint
 # as HTML requires. Correct code is misreported — `Promise.reject(x).catch(...)`
 # and `try { await rejecting() } catch {}` both attach their handler later in
-# the same checkpoint — which a strict host then fails a test on. Pinned to the
-# fork branch that implements HTML's timing, open upstream as
-# https://github.com/hmsk/quickjs.rb/pull/141. Drop the override (and relax the
-# gemspec) once it is released.
-gem "quickjs", github: "takahashim/quickjs.rb", ref: "668d4c1",
+# the same checkpoint — which a strict host then fails a test on. The fork
+# branch that implements HTML's timing is open upstream as
+# https://github.com/hmsk/quickjs.rb/pull/141; pinned one commit past it, to
+# `feat/rejection-js-hook`, which hands rejections to a JS function with the
+# promise and reason intact — without it the window's `event.reason` /
+# `event.promise` / `rejectionhandled` have nothing to report and their tests
+# skip. That branch has no upstream PR yet. Drop the override (and relax the
+# gemspec) once both are released.
+gem "quickjs", github: "takahashim/quickjs.rb", ref: "ef60ed5",
   submodules: true # the QuickJS C sources are a submodule
 
 # In the dommy monorepo, use the working trees next door; a standalone clone
