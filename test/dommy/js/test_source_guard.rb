@@ -11,14 +11,25 @@ require "test_helper"
 class Dommy::Js::TestSourceGuard < Minitest::Test
   SG = Dommy::Js::Quickjs::SourceGuard
 
-  # The raw QuickJS construct fails to compile; the rewritten one must succeed.
-  def test_for_of_yield_compiles_after_rewrite
-    bad = "(function*(){for(var f of (yield 1, [1,2])) f})"
-    assert_raises(::Quickjs::RuntimeError) { ::Quickjs::VM.new.eval_code(bad) }
-
+  # The rewrite has to mean exactly what the original meant, because the Backend
+  # swaps it in whenever a compile fails with the codegen bug. QuickJS fixed that
+  # bug in the engine 0.21 vendors, so the raw construct compiles again here; the
+  # guard stays as the retry path, and this pins down that it stays faithful.
+  def test_for_of_yield_rewrite_is_semantically_identical
+    bad = "(function*(){ globalThis.__seen = []; for (var f of (yield 1, [1, 2])) __seen.push(f) })"
     good = SG.fix_for_of_yield(bad)
-    refute_equal bad, good
-    refute_nil ::Quickjs::VM.new.eval_code(good), "rewritten source compiles + runs (returns the generator)"
+    refute_equal bad, good, "the guard rewrites this construct"
+
+    assert_equal [1, 2], run_generator(good)
+    assert_equal run_generator(bad), run_generator(good),
+      "the rewritten source behaves like the original the engine now compiles"
+  end
+
+  # Drive a generator source to completion and return what it iterated.
+  def run_generator(source)
+    vm = ::Quickjs::VM.new
+    vm.eval_code("var it = (#{source})(); it.next(); it.next();")
+    vm.eval_code("globalThis.__seen")
   end
 
   # The Backend retries automatically, so a generator with the construct just runs.

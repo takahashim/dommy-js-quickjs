@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Requires `quickjs ~> 0.21.0` (was `~> 0.18.0`). Until the fix is released upstream, the Gemfile points at [takahashim/quickjs.rb#fix/unhandled-rejection-checkpoint-timing](https://github.com/takahashim/quickjs.rb/tree/fix/unhandled-rejection-checkpoint-timing), which reports an unhandled rejection at the end of the microtask checkpoint as HTML requires, rather than the moment a promise rejects. Without it, `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are both misreported as unhandled — correct code that a strict host then fails a test on.
+- The QuickJS engine 0.21 vendors compiles a `for...of` whose iterable contains a `yield`, which 0.18 failed on. `SourceGuard` stays as the Backend's retry path, but the construct no longer needs it.
+
 ## 0.9.0 — 2026-06-22
 
 The first substantial release since `0.1.0`. The version jumps to `0.9.0` to

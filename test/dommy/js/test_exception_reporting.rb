@@ -111,12 +111,17 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
 
   # --- An unhandled rejection ---
 
+  # The page gets the event, and the host gets the message. `event.reason` is a
+  # stand-in rather than the page's own Error: the engine hands the host a
+  # converted Ruby exception, not the rejected JS value, so its identity (and
+  # with it `.message` / `.stack`) does not survive the crossing. Same missing
+  # signal that keeps `rejectionhandled` unimplemented.
   def test_an_unhandled_rejection_fires_the_unhandledrejection_event
     html = <<~HTML
       <html><body><script>
-        window.__reasons = [];
+        window.__seen = [];
         window.addEventListener("unhandledrejection", function (e) {
-          window.__reasons.push(String(e.reason && e.reason.message));
+          window.__seen.push({ type: e.type, hasReason: e.reason != null });
         });
       </script></body></html>
     HTML
@@ -124,8 +129,12 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     browser.execute('Promise.reject(new Error("rejected"));')
     browser.settle
 
-    assert_includes browser.evaluate("window.__reasons"), "rejected",
-      "the page sees unhandledrejection, not just the host"
+    seen = browser.evaluate("window.__seen")
+    assert_equal 1, seen.length, "the page sees unhandledrejection, not just the host"
+    assert_equal "unhandledrejection", seen[0]["type"]
+    assert seen[0]["hasReason"]
+    assert(browser.js_errors.any? { |e| e.message.to_s.include?("rejected") },
+      "the host log keeps the reason's message")
   ensure
     browser&.dispose
   end
