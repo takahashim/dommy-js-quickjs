@@ -26,12 +26,13 @@ gem "quickjs", github: "takahashim/quickjs.rb", ref: "ef60ed5",
   submodules: true # the QuickJS C sources are a submodule
 
 # In the dommy monorepo, use the working trees next door; a standalone clone
-# falls back to the released gems.
+# (CI included) falls back to the released gems. Both sides carry the same set,
+# so CI runs the Capybara and Rack suites too rather than skipping 60 tests.
 dommy_gems = File.expand_path("../dommy/gems", __dir__)
 if File.directory?(dommy_gems)
   gem "dommy", path: "#{dommy_gems}/dommy"
 
-  # Test-only Capybara integration (these gems are unpublished).
+  # Test-only Capybara integration.
   gem "capybara"
   gem "capybara-dommy", path: "#{dommy_gems}/capybara-dommy"
   gem "dommy-rack", path: "#{dommy_gems}/dommy-rack"
@@ -42,4 +43,8 @@ if File.directory?(dommy_gems)
   # gem "makiri", path: File.expand_path("../makiri", __dir__)
 else
   gem "dommy"
+
+  gem "capybara"
+  gem "capybara-dommy"
+  gem "dommy-rack"
 end
