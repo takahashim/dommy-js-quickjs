@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "json"
-
 module Dommy
   module Js
     module Quickjs
@@ -11,19 +9,26 @@ module Dommy
       #   rt.define_host_object("document", win.document)
       #   rt.evaluate('document.querySelector("h1").textContent')  #=> "..."
       #
-      # Wires the QuickJS Backend to the engine-agnostic HostBridge, seeded with
-      # the Dommy method manifest.
+      # Implements the Dommy::Js::Runtime port (see that module for the contract)
+      # by wiring four collaborators together and delegating to them:
+      #
+      #   Backend             the `quickjs` gem — eval, compile, the VM's state
+      #   HostBridge          the engine-agnostic JS<->Ruby DOM bridge (core)
+      #   BrowserEnvironment  the globals and polyfills a page expects to find
+      #   EventLoop           microtasks + Dommy's scheduler, as one loop
+      #   ErrorTranslator     an engine exception, as what the page should see
+      #
+      # What stays here is the port itself: script evaluation, and the wiring
+      # that decides which collaborator answers a host's call.
       class Runtime
         def initialize(**vm_opts)
           @backend = Backend.new(**vm_opts)
           @bridge = Dommy::Js::HostBridge.new(@backend)
           @environment = BrowserEnvironment.new(@backend)
+          @errors = ErrorTranslator.new(@backend, @bridge)
+          @loop = EventLoop.new(@backend) { |error| @callback_error_listener&.call(error) }
           @callback_error_listener = nil
-          @js_halted = false
-          # Opt-in diagnostics: the engine stringifies a non-Error rejection reason
-          # to "[object Object]". Install a JS-side recorder so on_unhandled_rejection
-          # can surface the real cause (DOMMY_JS_DEBUG_REJECTIONS=1).
-          @track_rejections = !ENV["DOMMY_JS_DEBUG_REJECTIONS"].to_s.empty?
+          @track_rejections = Config.track_rejections?
           # Install the JS-side Promise rejection recorder (HostBridge registers
           # the __rb_record_rejection_detail sink it pushes to). The detail then
           # backfills the engine's detail-less report in #enrich_rejection.
@@ -34,29 +39,18 @@ module Dommy
           @bridge.define_host_object(name, obj)
         end
 
-        # Inject the Dommy window and alias the bare browser timer globals to it,
-        # so `setTimeout(fn, ms)` routes into Dommy's deterministic scheduler.
-        # Drive callbacks with `win.scheduler.advance_time(ms)`. `window.setTimeout`
-        # already works via the Window manifest; this also wires the unqualified
-        # globals browsers expose.
+        # Inject the Dommy window: seed it as the JS global, give the bridge the
+        # realm it belongs to, route rejections and runaway callbacks back here,
+        # and alias the bare timer globals onto it (so `setTimeout(fn, ms)` runs
+        # through Dommy's deterministic scheduler — drive it with
+        # `win.scheduler.advance_time(ms)`).
         def install_window(win)
           @window = win
+          @loop.window = win
           define_host_object("window", win)
           @bridge.window = win
           install_promise_rejection_hook
-          # A runaway timer/rAF callback (busy loop) is force-killed by the gem's
-          # eval timeout, surfacing as a Quickjs::InterruptedError out of the host
-          # call. Route it through the scheduler's error hook so it is recorded as
-          # a js_error and dropped, not propagated as a fatal crash (browsing must
-          # never crash). Genuine host bugs (any other error) still propagate.
-          if win.respond_to?(:scheduler) && win.scheduler
-            win.scheduler.timer_error_handler = method(:handle_timer_error)
-            # The other half of a WHATWG microtask checkpoint: the engine's
-            # promise-job queue. Wiring this lets the scheduler drain microtasks
-            # after EACH task (not once per batch of due timers), as the event
-            # loop processing model requires.
-            win.scheduler.microtask_checkpoint = method(:drain_microtasks)
-          end
+          wire_scheduler(win)
           @environment.install_timers
           win
         end
@@ -67,6 +61,28 @@ module Dommy
         def expose_constructors_on(window_obj)
           @bridge.expose_constructors_on(window_obj)
         end
+
+        # Wire the bare browser globals frameworks reach for, aliased onto the
+        # installed window: self / location / history / navigator / storages /
+        # CSS / fetch / addEventListener / .... Call after install_window. This
+        # is what lets real frontend bundles (Turbo, …) run unmodified.
+        def install_browser_globals
+          @environment.install_globals
+          self
+        end
+
+        # WPT-only scaffolding, part of the port's optional surface: the
+        # harness's common/sab.js derives the SharedArrayBuffer constructor from
+        # `new WebAssembly.Memory({shared:true}).buffer.constructor`. That is
+        # what the WebAssembly stub's Memory already yields, so this is the same
+        # install — named separately because a host asks for it explicitly, and a
+        # no-op when #install_browser_globals already ran.
+        def install_wasm_memory_shim
+          @environment.install_wasm_stub
+          self
+        end
+
+        # --- Running scripts ---
 
         # Run a script for side effects (no return value). Wrapped in an IIFE so
         # statements are allowed and the completion value is voided — otherwise a
@@ -101,83 +117,6 @@ module Dommy
           nil
         end
 
-        # A classic script's completion value is discarded by a browser, but the
-        # gem converts whatever the eval returned and REFUSES a pending Promise
-        # ("An unawaited Promise was returned to the top-level"). A script whose
-        # last statement is an assignment of one — `window.p = new Promise(…);`,
-        # which is how a page publishes a promise for a later script to await —
-        # therefore reached the page as an uncaught error, and a testharness page
-        # that saw it reported no results at all.
-        #
-        # #execute solves this by wrapping in an IIFE, which #load_script cannot
-        # do: its declarations have to land in global scope. Append a statement
-        # that evaluates to undefined instead. The leading newline is what keeps
-        # it out of a trailing line comment, and no declaration moves scope.
-        def discard_completion_value(js) = "#{js}\n;void 0;"
-
-        # Rebuild a script\'s thrown value as a real Error inside the realm.
-        #
-        # QuickJS raises a HOST exception when an evaluated script throws, so by
-        # the time we see it the JS value is gone: its message and frames
-        # survive as a Ruby exception, the object itself does not. Handing that
-        # husk to the page gives a handler an object with no `message` and no
-        # `stack`, which is worse than useless — reading either throws, so the
-        # handler dies before it can cancel the report.
-        #
-        # An equivalent Error is built in the realm instead, carrying the same
-        # name, message and frames. Everything a handler observes matches what
-        # it threw; what it cannot do is compare identity (`e.error === thrown`),
-        # since the original was freed before we were told about it. Preserving
-        # that needs the engine to hand the value over instead of converting it.
-        #
-        # Returns nil for anything that did not come from JS (a host bug) and
-        # for any failure to rebuild, so the caller falls back to what it caught.
-        def rebuild_error(error)
-          return nil unless error.is_a?(::Quickjs::RuntimeError)
-
-          # Deliberately NOT #evaluate: that drives the event loop, and this runs
-          # while the page is still booting its scripts — a due-now timer from an
-          # earlier script would fire before the next `<script>`, which no browser
-          # does. A bare tagged eval only builds the object and marshals it.
-          @bridge.decode(@backend.eval(<<~JS))
-            __rbHost.tag((function () {
-              var Ctor = globalThis[#{::JSON.generate(js_error_name(error))}];
-              var e = new (typeof Ctor === "function" ? Ctor : Error)(#{::JSON.generate(error.message.to_s)});
-              var stack = #{::JSON.generate(js_frames(error))};
-              if (stack) { try { e.stack = stack; } catch (_) {} }
-              return e;
-            })());
-          JS
-        rescue ::StandardError
-          nil
-        end
-
-        # The JS half of a converted exception's backtrace, as the page's own
-        # `stack` string.
-        #
-        # An exception that came from JS carries engine frames (`at f
-        # (<code>:1:34)`). One raised by the host while evaluating carries Ruby
-        # ones (`/…/lib/dommy/js/quickjs/backend.rb:82:in '…'`), and handing
-        # those to the page would publish this gem's file paths to anything that
-        # reads `error.stack` — a page can log or upload it. Keep the JS frames,
-        # drop the rest, and let an all-host backtrace produce an empty stack
-        # rather than a plausible-looking lie about where the page failed.
-        JS_FRAME = /\A\s*at\s/
-        private_constant :JS_FRAME
-
-        def js_frames(error)
-          Array(error.backtrace).grep(JS_FRAME).join("\n")
-        end
-
-        # The JS constructor name behind a converted exception. quickjs.rb maps
-        # each standard error to its own subclass (`Quickjs::TypeError` for a JS
-        # `TypeError`), and uses the generic `RuntimeError` for a plain `Error`
-        # and for a thrown non-Error.
-        def js_error_name(error)
-          name = error.class.name.to_s.split("::").last.to_s
-          name == "RuntimeError" ? "Error" : name
-        end
-
         # Install the ESM module resolver (see Backend#module_loader=). A
         # callable `(specifier, importer) -> source | {code:, as:} | nil`.
         def module_loader=(callable)
@@ -185,7 +124,9 @@ module Dommy
         end
 
         # Evaluate an external module by URL (the loader fetches it); its
-        # relative imports resolve against that URL. Drains microtasks.
+        # relative imports resolve against that URL. An inline module arrives
+        # here too, seeded under a page URL by ScriptBoot so `import.meta.url`
+        # resolves. Drains microtasks.
         def load_module_url(url)
           bump_dom_epoch
           @backend.import_module_url(url)
@@ -208,6 +149,172 @@ module Dommy
           evaluate_settled("(async () => {\n#{js}\n})()")
         end
 
+        # Drive the document lifecycle: set `document.readyState` and fire the
+        # milestone events (`readystatechange`, then `DOMContentLoaded` on
+        # "interactive" / `load` on "complete"), then drain microtasks so the
+        # listeners settle. Lets a host replay the real load sequence so code
+        # that waits on document readiness (framework startup, `ready` handlers)
+        # runs the deferred path. The document defaults to "complete", so call
+        # `set_document_ready_state("loading")` BEFORE loading such code to
+        # exercise the waiting path.
+        def set_document_ready_state(state)
+          @window&.document&.__internal_set_ready_state__(state)
+          drain_microtasks
+          self
+        end
+
+        # --- Driving the event loop (see EventLoop for what each one means) ---
+
+        def drain_microtasks = @loop.drain_microtasks
+
+        def settle(max_iterations: EventLoop::DEFAULT_MAX_ITERATIONS)
+          @loop.settle(max_iterations: max_iterations)
+          self
+        end
+
+        def run_until_idle(max_iterations: EventLoop::DEFAULT_MAX_ITERATIONS)
+          @loop.run_until_idle(max_iterations: max_iterations)
+          self
+        end
+
+        # --- Errors ---
+
+        # An engine exception for a script's throw, rebuilt as a real Error
+        # inside the realm so `event.error` is something the page can read.
+        # Optional in the port contract; returns nil when it cannot be done.
+        def rebuild_error(error) = @errors.rebuild_error(error)
+
+        # Surface otherwise-swallowed JS promise rejections (see Backend).
+        # Goes quiet once the JS hook is installed: both would fire for the same
+        # rejection, and the hook carries strictly more.
+        def on_unhandled_rejection(&block)
+          # Decided when a rejection actually arrives, not now: a host registers
+          # this before #install_window, which is where the hook goes in.
+          relay = lambda do |error|
+            next if js_rejection_hook?
+
+            block.call(@track_rejections ? @errors.enrich_rejection(error) : error)
+          end
+          @backend.on_unhandled_rejection(&relay)
+          self
+        end
+
+        # Whether rejections arrive through the JS hook. A host that also relays
+        # #on_unhandled_rejection would otherwise report each rejection twice.
+        def js_rejection_hook? = !!@js_rejection_hook
+
+        # Observe a timer/rAF callback that was force-killed by the execution
+        # timeout (a runaway busy loop). The host records it as a js_error; the
+        # offending timer is already dropped by the scheduler so it cannot
+        # re-stall. Optional in the port contract (guard with respond_to?).
+        def on_callback_error(&block)
+          @callback_error_listener = block
+          self
+        end
+
+        # Observe console.* output (see Backend).
+        def on_log(&block)
+          @backend.on_log(&block)
+          self
+        end
+
+        # --- Introspection and teardown ---
+
+        # Handle-oriented JS access for a wasm guest (see WasmBridge). Memoized
+        # so the guest's `__rbWasmInvoke` dispatcher (installed via #on_invoke)
+        # stays registered for the VM's lifetime.
+        def wasm_bridge
+          @wasm_bridge ||= WasmBridge.new(@backend)
+        end
+
+        # Run JS GC then drain, so FinalizationRegistry cleanup callbacks fire and
+        # release handles for proxies that are no longer referenced.
+        def collect_garbage
+          @backend.run_gc
+          @backend.drain_microtasks
+        end
+
+        # Live handle count (introspection for lifetime tests).
+        def registered_count = @bridge.registered_count
+
+        # Snapshot bridge crossing counts when DOMMY_JS_BRIDGE_PROFILE=1.
+        def bridge_crossing_counts(limit: nil) = @bridge.crossing_counts(limit: limit)
+
+        def reset_bridge_crossing_counts
+          @bridge.reset_crossing_counts
+          self
+        end
+
+        def dispose = @backend.dispose
+
+        private
+
+        # A runaway timer/rAF callback (busy loop) is force-killed by the gem's
+        # eval timeout, surfacing as a Quickjs::InterruptedError out of the host
+        # call. Route it through the scheduler's error hook so it is recorded as
+        # a js_error and dropped, not propagated as a fatal crash (browsing must
+        # never crash). Genuine host bugs (any other error) still propagate.
+        #
+        # The microtask checkpoint is the other half of the wiring: draining
+        # after EACH task (not once per batch of due timers) is what the event
+        # loop processing model requires.
+        def wire_scheduler(win)
+          return unless win.respond_to?(:scheduler) && win.scheduler
+
+          win.scheduler.timer_error_handler = method(:handle_timer_error)
+          win.scheduler.microtask_checkpoint = method(:drain_microtasks)
+        end
+
+        # Hand rejections to the JS hook rather than to a Ruby callback, when the
+        # engine has one. It is called with the promise and the reason as the
+        # values the page threw, which is the whole point: an exception the
+        # engine already converted has lost both, and the page ends up with an
+        # object it cannot read. The hook also reports the other half of HTML's
+        # tracking, `rejectionhandled`, which a Ruby callback never sees.
+        #
+        # No-op on an engine without it; #on_unhandled_rejection then stays the
+        # route, with the losses that implies.
+        def install_promise_rejection_hook
+          return unless @backend.respond_to?(:promise_rejection_hook=)
+
+          @backend.promise_rejection_hook = "__rbHost.onPromiseRejection"
+          @js_rejection_hook = true
+        rescue ::StandardError
+          @js_rejection_hook = false
+        end
+
+        # Scheduler hook: a timer/rAF callback raised. A JS-execution error —
+        # the callback threw (Quickjs::RuntimeError) or was force-killed for
+        # running too long (Quickjs::InterruptedError < RuntimeError) — must not
+        # escape its dispatch (WHATWG: a timer callback's exception is reported,
+        # the event loop keeps running). Record it and return truthy so the
+        # scheduler drops the timer and browsing continues. A non-JS error is a
+        # genuine host bug: return falsy so it propagates.
+        def handle_timer_error(error, timer)
+          return false unless error.is_a?(::Quickjs::RuntimeError)
+
+          # An out-of-memory in a timer callback poisons the whole VM: the page's
+          # JS is dead from here on, so flag it (and report once) — not just this
+          # one callback.
+          @loop.note_halted(error) if @backend.poisoned?
+          @callback_error_listener&.call(@errors.with_timer_origin(error, timer))
+          true
+        end
+
+        # A classic script's completion value is discarded by a browser, but the
+        # gem converts whatever the eval returned and REFUSES a pending Promise
+        # ("An unawaited Promise was returned to the top-level"). A script whose
+        # last statement is an assignment of one — `window.p = new Promise(…);`,
+        # which is how a page publishes a promise for a later script to await —
+        # therefore reached the page as an uncaught error, and a testharness page
+        # that saw it reported no results at all.
+        #
+        # #execute solves this by wrapping in an IIFE, which #load_script cannot
+        # do: its declarations have to land in global scope. Append a statement
+        # that evaluates to undefined instead. The leading newline is what keeps
+        # it out of a trailing line comment, and no declaration moves scope.
+        def discard_completion_value(js) = "#{js}\n;void 0;"
+
         # Ruby -> JS entry: Ruby code (test drivers, script boot) may have
         # mutated the DOM since JS last ran, so invalidate the bridge's
         # attribute snapshots (see host_runtime.js). A no-op before the host
@@ -229,285 +336,8 @@ module Dommy
           # `void 0` keeps the completion value off the promise, so the eval
           # doesn't trip the gem's "unawaited Promise at top-level" guard.
           @backend.eval("globalThis.__rbEvalP = Promise.resolve(#{expr}); void 0;")
-          drive_due_now
+          @loop.drive_due_now
           @bridge.decode(eval_tagged("await globalThis.__rbEvalP"))
-        end
-
-        # Run the event loop over the work ready at the current virtual time —
-        # the microtask checkpoint plus every due task and anything it queues at
-        # the same instant — WITHOUT advancing the clock to a future timer (a
-        # result waiting on a real delay is left for the await to surface). The
-        # nested-timer 4ms clamp guarantees due-now work drains in finite turns.
-        def drive_due_now
-          sched = @window&.scheduler
-          return drain_microtasks unless sched
-
-          64.times do
-            sched.advance_time(0)
-            break unless sched.next_due_timer_at == sched.now_ms
-          end
-          nil
-        end
-
-        def drain_microtasks
-          @backend.drain_microtasks
-        rescue ::Quickjs::RuntimeError => e
-          # The microtask checkpoint hit out-of-memory and poisoned the VM. Per
-          # the "browsing never crashes" contract, don't let it escape the event
-          # loop: record it once (so it shows in js_errors / the activity log) and
-          # then no-op — the page's JS is dead, but the browser stays alive.
-          raise unless @backend.poisoned?
-
-          note_js_halted(e)
-        end
-
-        # Drive the document lifecycle: set `document.readyState` and fire the
-        # milestone events (`readystatechange`, then `DOMContentLoaded` on
-        # "interactive" / `load` on "complete"), then drain microtasks so the
-        # listeners settle. Lets a host replay the real load sequence so code
-        # that waits on document readiness (framework startup, `ready` handlers)
-        # runs the deferred path. The document defaults to "complete", so call
-        # `set_document_ready_state("loading")` BEFORE loading such code to
-        # exercise the waiting path.
-        def set_document_ready_state(state)
-          @window&.document&.__internal_set_ready_state__(state)
-          drain_microtasks
-          self
-        end
-
-        # Handle-oriented JS access for a wasm guest (see WasmBridge). Memoized
-        # so the guest's `__rbWasmInvoke` dispatcher (installed via #on_invoke)
-        # stays registered for the VM's lifetime.
-        def wasm_bridge
-          @wasm_bridge ||= WasmBridge.new(@backend)
-        end
-
-        # Drive the event loop to quiescence: drain the native microtask queue,
-        # then advance the deterministic scheduler to its next due timer and drain
-        # again, repeating until no timer is pending. This is the single
-        # deterministic "settle everything" entry point a host uses after an eval
-        # (mirroring a `drain_async!`): every queued microtask runs and every
-        # scheduled timer fires, in WHATWG order (microtasks before each timer).
-        # `max_iterations` bounds runaway timer loops (e.g. a self-rescheduling
-        # setInterval).
-        def run_until_idle(max_iterations: 1000)
-          sched = @window&.scheduler
-          max_iterations.times do
-            drain_microtasks
-            break unless sched
-
-            next_at = sched.next_due_timer_at
-            break unless next_at
-
-            sched.advance_time(next_at - sched.now_ms)
-            drain_microtasks
-          end
-          self
-        end
-
-        # Settle the work that is READY at the current virtual time: drain
-        # microtasks, run timers already due now (`setTimeout(0)` chains), and
-        # flush pending `requestAnimationFrame` callbacks by advancing to their
-        # frame boundary — but do NOT jump the clock to a not-yet-due
-        # `setTimeout(300)` (that needs an explicit `advance_time(300)`). This is
-        # the "let promises and animation frames resolve" entry point; `bound`
-        # caps a self-rescheduling rAF loop.
-        def settle(max_iterations: 1000)
-          sched = @window&.scheduler
-          max_iterations.times do
-            drain_microtasks
-            break unless sched
-
-            before = sched.now_ms
-            sched.advance_time(0) # run due-now timers + microtasks, no clock jump
-            drain_microtasks
-
-            raf_at = sched.next_animation_frame_at
-            if raf_at && raf_at > sched.now_ms
-              sched.advance_time(raf_at - sched.now_ms) # advance to the frame, run rAF
-              drain_microtasks
-              next
-            end
-
-            break if sched.now_ms == before
-          end
-          self
-        end
-
-        # Hand rejections to the JS hook rather than to a Ruby callback, when the
-        # engine has one. It is called with the promise and the reason as the
-        # values the page threw, which is the whole point: an exception the
-        # engine already converted has lost both, and the page ends up with an
-        # object it cannot read. The hook also reports the other half of HTML's
-        # tracking, `rejectionhandled`, which a Ruby callback never sees.
-        #
-        # No-op on an engine without it; #on_unhandled_rejection then stays the
-        # route, with the losses that implies.
-        def install_promise_rejection_hook
-          return unless @backend.respond_to?(:promise_rejection_hook=)
-
-          @backend.promise_rejection_hook = "__rbHost.onPromiseRejection"
-          @js_rejection_hook = true
-        rescue ::StandardError
-          @js_rejection_hook = false
-        end
-
-        # Whether rejections arrive through the JS hook. A host that also relays
-        # #on_unhandled_rejection would otherwise report each rejection twice.
-        def js_rejection_hook? = !!@js_rejection_hook
-
-        # Surface otherwise-swallowed JS promise rejections (see Backend).
-        # Goes quiet once the JS hook is installed: both would fire for the same
-        # rejection, and the hook carries strictly more.
-        def on_unhandled_rejection(&block)
-          # Decided when a rejection actually arrives, not now: a host registers
-          # this before #install_window, which is where the hook goes in.
-          relay = lambda do |err|
-            next if js_rejection_hook?
-
-            block.call(@track_rejections ? enrich_rejection(err) : err)
-          end
-          @backend.on_unhandled_rejection(&relay)
-          self
-        end
-
-        # In rejection-debug mode, replace the engine's detail-less "[object
-        # Object]" message (a non-Error reason the engine could only toString)
-        # with the rich detail recorded JS-side at rejection time, paired by
-        # recency. A no-op for errors that already carry a real message.
-        def enrich_rejection(err)
-          return err unless err.respond_to?(:message) && err.message.to_s.strip == "[object Object]"
-
-          detail = @bridge.take_rejection_detail
-          return err if detail.nil? || detail.to_s.empty?
-
-          enriched = ::Quickjs::RuntimeError.new(detail.to_s, "UnhandledRejection")
-          enriched.set_backtrace(err.backtrace) if err.backtrace
-          enriched
-        rescue StandardError
-          err
-        end
-
-        # Observe a timer/rAF callback that was force-killed by the execution
-        # timeout (a runaway busy loop). The host records it as a js_error; the
-        # offending timer is already dropped by the scheduler so it cannot
-        # re-stall. Optional in the Runtime contract (guard with respond_to?).
-        def on_callback_error(&block)
-          @callback_error_listener = block
-          self
-        end
-
-        # Observe console.* output (see Backend).
-        def on_log(&block)
-          @backend.on_log(&block)
-          self
-        end
-
-        # Wire the bare browser globals frameworks reach for, aliased onto the
-        # installed window: self / location / history / navigator / storages /
-        # CSS / fetch / addEventListener / .... Call after install_window. This
-        # is what lets real frontend bundles (Turbo, …) run unmodified.
-        def install_browser_globals
-          @environment.install_globals
-          self
-        end
-
-        # WPT-only scaffolding, part of the Runtime port's optional surface: the
-        # harness's common/sab.js derives the SharedArrayBuffer constructor from
-        # `new WebAssembly.Memory({shared:true}).buffer.constructor`. That is
-        # what the stub's Memory already yields, so this is the same install —
-        # named separately because a host asks for it explicitly, and idempotent
-        # when #install_browser_globals already ran.
-        def install_wasm_memory_shim
-          @environment.install_wasm_stub
-          self
-        end
-
-        # Run JS GC then drain, so FinalizationRegistry cleanup callbacks fire and
-        # release handles for proxies that are no longer referenced.
-        def collect_garbage
-          @backend.run_gc
-          @backend.drain_microtasks
-        end
-
-        # Live handle count (introspection for lifetime tests).
-        def registered_count
-          @bridge.registered_count
-        end
-
-        # Snapshot bridge crossing counts when DOMMY_JS_BRIDGE_PROFILE=1.
-        def bridge_crossing_counts(limit: nil)
-          @bridge.crossing_counts(limit: limit)
-        end
-
-        def reset_bridge_crossing_counts
-          @bridge.reset_crossing_counts
-          self
-        end
-
-        def dispose
-          @backend.dispose
-        end
-
-        private
-
-        # Scheduler hook: a timer/rAF callback raised. A JS-execution error —
-        # the callback threw (Quickjs::RuntimeError) or was force-killed for
-        # running too long (Quickjs::InterruptedError < RuntimeError) — must not
-        # escape its dispatch (WHATWG: a timer callback's exception is reported,
-        # the event loop keeps running). Record it and return truthy so the
-        # scheduler drops the timer and browsing continues. A non-JS error is a
-        # genuine host bug: return falsy so it propagates.
-        def handle_timer_error(error, timer)
-          return false unless error.is_a?(::Quickjs::RuntimeError)
-
-          # An out-of-memory in a timer callback poisons the whole VM: the page's
-          # JS is dead from here on, so flag it (and report once) — not just this
-          # one callback.
-          note_js_halted(error) if @backend.poisoned?
-          @callback_error_listener&.call(enrich_callback_error(error, timer))
-          true
-        end
-
-        # The VM hit out-of-memory and is poisoned. Surface the failure ONCE (a
-        # repeated drain would otherwise report it every tick) so the user sees
-        # that the page's JavaScript stopped, then leave it to the no-op guards.
-        def note_js_halted(error)
-          return if @js_halted
-
-          @js_halted = true
-          @callback_error_listener&.call(error)
-          nil
-        end
-
-        # Attach the timer's scheduling stack (where the page set the timer up) to
-        # the recorded error, so a callback that throws a stackless value — a bare
-        # `null`, common in minified bundles — is still traceable to the code that
-        # scheduled it. The error's class (and message, the dedup key) is kept;
-        # only its backtrace is replaced with the JS frames, which the diagnostics
-        # UI reads in place of the host scheduler internals. A no-op when no origin
-        # was captured (a timer not created through the instrumented globals, or a
-        # unit test driving the scheduler directly).
-        def enrich_callback_error(error, timer)
-          frames = fetch_timer_origin(timer)
-          error.set_backtrace(frames) unless frames.empty?
-          error
-        rescue StandardError
-          error
-        end
-
-        # The scheduling stack for `timer`, as cleaned frame strings (or []). The
-        # origin Error lives JS-side until now; fetching it also clears it.
-        def fetch_timer_origin(timer)
-          return [] unless timer.respond_to?(:id)
-
-          stack = @backend.call_js("__rbFetchTimerOrigin", timer.id).to_s
-          # Drop the shim's own frame (the `new Error()` in __rbDefer) so the top
-          # frame is the page code that called setTimeout/setInterval.
-          stack.split("\n").map(&:strip).reject(&:empty?)
-               .reject { |line| line.include?("__rbDefer") }
-        rescue StandardError
-          []
         end
 
         def eval_tagged(inner_expr)

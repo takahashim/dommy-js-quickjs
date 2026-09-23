@@ -535,13 +535,14 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
       "/Users/someone/lib/dommy/js/quickjs/backend.rb:82:in 'Quickjs::VM#eval_code'",
       "/Users/someone/lib/dommy/js/quickjs/runtime.rb:133:in 'Runtime#load_script'"
     ])
-    assert_equal "", rt.send(:js_frames, host),
+    translator = rt.send(:instance_variable_get, :@errors)
+    assert_equal "", translator.js_frames(host),
       "nothing here happened in JS, so the page is told nothing about where"
-    refute_nil rt.send(:rebuild_error, host), "it still gets a usable Error"
+    refute_nil translator.rebuild_error(host), "it still gets a usable Error"
 
     from_js = ::Quickjs::TypeError.new("thrown by the page", nil)
     from_js.set_backtrace(["    at f (<code>:1:34)", "    at <eval> (<code>:2:2)"])
-    assert_equal "    at f (<code>:1:34)\n    at <eval> (<code>:2:2)", rt.send(:js_frames, from_js),
+    assert_equal "    at f (<code>:1:34)\n    at <eval> (<code>:2:2)", translator.js_frames(from_js),
       "engine frames are the page's own, and stay"
   ensure
     rt&.dispose

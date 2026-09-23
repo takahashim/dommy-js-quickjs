@@ -17,8 +17,11 @@ end
 # WireTags / HandleTable / DomInterfaces / ConstructorResolver /
 # CustomElementBridge, with host_runtime.js / observable_runtime.js). This gem
 # provides only the QuickJS backend that plugs in underneath.
+require_relative "quickjs/config"
 require_relative "quickjs/backend"
 require_relative "quickjs/browser_environment"
+require_relative "quickjs/event_loop"
+require_relative "quickjs/error_translator"
 require_relative "quickjs/wasm_bridge"
 require_relative "quickjs/runtime"
 require_relative "quickjs/script_cache"

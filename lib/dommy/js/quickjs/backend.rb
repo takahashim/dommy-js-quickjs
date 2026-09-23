@@ -29,7 +29,7 @@ module Dommy
         end
       end
 
-      if ::Quickjs.respond_to?(:_with_timeout) && ENV["DOMMY_JS_CROSSING_TIMEOUT"].to_s.empty?
+      if ::Quickjs.respond_to?(:_with_timeout) && !Config.crossing_timeout?
         ::Quickjs.singleton_class.prepend(SkipCrossingTimeout)
       end
 
@@ -45,31 +45,10 @@ module Dommy
       # the top-level tag); either way it maps to Dommy::Bridge::UNDEFINED. No
       # normalization is needed here.
       class Backend
-        # The gem's default eval timeout is 100ms, which interrupts large
-        # synchronous bridge loops (every property crossing is a Ruby call).
-        DEFAULT_TIMEOUT_MSEC = 60_000
-
-        # The per-eval timeout, in ms. A single JS eval — a script, or one
-        # timer/rAF callback — is force-aborted (Quickjs::InterruptedError, caught
-        # and logged) after this long. It is ALSO the ceiling on how long QuickJS
-        # holds the thread in C: while it runs, a Ctrl-C (delivered as a deferred
-        # SIGINT) can't be serviced, so an interactive host (dommynx) sets a lower
-        # value via DOMMY_JS_TIMEOUT_MSEC so a heavy/runaway burst can't freeze the
-        # UI for the full library default.
-        def self.default_timeout_msec
-          env = ENV["DOMMY_JS_TIMEOUT_MSEC"].to_i
-          env.positive? ? env : DEFAULT_TIMEOUT_MSEC
-        end
-
-        # The gem's default memory ceiling is 128 MB. A real-site SPA (note.com's
-        # Apollo/React bundle, hydration, the whole DOM mirrored as host proxies)
-        # blows past that and the VM hits out-of-memory, which poisons it. Give a
-        # browser-grade VM more headroom so heavy pages actually finish rendering;
-        # the OOM is also now survivable (see #poisoned?), not a crash.
-        DEFAULT_MEMORY_LIMIT = 512 * 1024 * 1024
-
+        # Timeout and memory ceiling both differ from the gem's defaults, for
+        # reasons Config documents.
         def initialize(**vm_opts)
-          vm_opts = {timeout_msec: self.class.default_timeout_msec, memory_limit: DEFAULT_MEMORY_LIMIT}.merge(vm_opts)
+          vm_opts = {timeout_msec: Config.timeout_msec, memory_limit: Config.memory_limit}.merge(vm_opts)
           @vm = ::Quickjs::VM.new(**vm_opts)
         end
 

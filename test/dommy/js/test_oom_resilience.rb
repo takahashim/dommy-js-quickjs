@@ -11,6 +11,7 @@ require "test_helper"
 # whatever rendered before its JS died.
 class Dommy::Js::TestOomResilience < Minitest::Test
   Backend = Dommy::Js::Quickjs::Backend
+  Config = Dommy::Js::Quickjs::Config
 
   def test_a_poisoned_vm_stops_being_driven_instead_of_crashing
     backend = Backend.new(memory_limit: 8 * 1024 * 1024) # tiny ceiling to force OOM fast
@@ -38,13 +39,13 @@ class Dommy::Js::TestOomResilience < Minitest::Test
     original = ENV["DOMMY_JS_TIMEOUT_MSEC"]
 
     ENV.delete("DOMMY_JS_TIMEOUT_MSEC")
-    assert_equal Backend::DEFAULT_TIMEOUT_MSEC, Backend.default_timeout_msec
+    assert_equal Config::DEFAULT_TIMEOUT_MSEC, Config.timeout_msec
 
     ENV["DOMMY_JS_TIMEOUT_MSEC"] = "15000"
-    assert_equal 15_000, Backend.default_timeout_msec
+    assert_equal 15_000, Config.timeout_msec
 
     ENV["DOMMY_JS_TIMEOUT_MSEC"] = "0" # ignore a junk/zero value, keep the default
-    assert_equal Backend::DEFAULT_TIMEOUT_MSEC, Backend.default_timeout_msec
+    assert_equal Config::DEFAULT_TIMEOUT_MSEC, Config.timeout_msec
   ensure
     ENV["DOMMY_JS_TIMEOUT_MSEC"] = original
   end
