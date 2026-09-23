@@ -39,7 +39,7 @@ Gem::Specification.new do |spec|
   # which is unreleased; the Gemfile pins the fork branch of hmsk/quickjs.rb#141
   # until it ships. 0.21.0 is the floor everything else here works against.
   spec.add_dependency "quickjs", "~> 0.21.0"
-  spec.add_dependency "dommy", ">= 0.10.0"
+  spec.add_dependency "dommy", ">= 0.13.0"
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html
