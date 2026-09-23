@@ -130,7 +130,7 @@ module Dommy
         # trap in function scope. Drains microtasks afterward.
         def load_script(js)
           bump_dom_epoch
-          @backend.eval(js)
+          @backend.eval(discard_completion_value(js))
           drain_microtasks
           nil
         end
@@ -140,10 +140,24 @@ module Dommy
         # avoiding a re-parse of large vendored bundles on every page load.
         def load_script_cached(js, cache_key:)
           bump_dom_epoch
-          @backend.run_compiled(ScriptCache.compiled(cache_key, js))
+          @backend.run_compiled(ScriptCache.compiled(cache_key, discard_completion_value(js)))
           drain_microtasks
           nil
         end
+
+        # A classic script's completion value is discarded by a browser, but the
+        # gem converts whatever the eval returned and REFUSES a pending Promise
+        # ("An unawaited Promise was returned to the top-level"). A script whose
+        # last statement is an assignment of one — `window.p = new Promise(…);`,
+        # which is how a page publishes a promise for a later script to await —
+        # therefore reached the page as an uncaught error, and a testharness page
+        # that saw it reported no results at all.
+        #
+        # #execute solves this by wrapping in an IIFE, which #load_script cannot
+        # do: its declarations have to land in global scope. Append a statement
+        # that evaluates to undefined instead. The leading newline is what keeps
+        # it out of a trailing line comment, and no declaration moves scope.
+        def discard_completion_value(js) = "#{js}\n;void 0;"
 
         # Rebuild a script\'s thrown value as a real Error inside the realm.
         #
@@ -173,13 +187,30 @@ module Dommy
             __rbHost.tag((function () {
               var Ctor = globalThis[#{::JSON.generate(js_error_name(error))}];
               var e = new (typeof Ctor === "function" ? Ctor : Error)(#{::JSON.generate(error.message.to_s)});
-              var stack = #{::JSON.generate(Array(error.backtrace).join("\n"))};
+              var stack = #{::JSON.generate(js_frames(error))};
               if (stack) { try { e.stack = stack; } catch (_) {} }
               return e;
             })());
           JS
         rescue ::StandardError
           nil
+        end
+
+        # The JS half of a converted exception's backtrace, as the page's own
+        # `stack` string.
+        #
+        # An exception that came from JS carries engine frames (`at f
+        # (<code>:1:34)`). One raised by the host while evaluating carries Ruby
+        # ones (`/…/lib/dommy/js/quickjs/backend.rb:82:in '…'`), and handing
+        # those to the page would publish this gem's file paths to anything that
+        # reads `error.stack` — a page can log or upload it. Keep the JS frames,
+        # drop the rest, and let an all-host backtrace produce an empty stack
+        # rather than a plausible-looking lie about where the page failed.
+        JS_FRAME = /\A\s*at\s/
+        private_constant :JS_FRAME
+
+        def js_frames(error)
+          Array(error.backtrace).grep(JS_FRAME).join("\n")
         end
 
         # The JS constructor name behind a converted exception. quickjs.rb maps

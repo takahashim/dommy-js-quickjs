@@ -478,4 +478,72 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
   ensure
     browser&.dispose
   end
+
+  # --- The completion value is not the page's business ---
+
+  # A browser throws a classic script's completion value away. The gem converts
+  # it, and refuses a pending Promise, so a script ending in the idiom that
+  # publishes one for a later script used to reach the page as an uncaught
+  # error — and a testharness page that saw it reported no results at all.
+  def test_a_script_ending_in_a_promise_is_not_an_error
+    html = <<~HTML
+      <html><body>
+        <script>
+          var declared = "global";
+          window.ready = new Promise(function (resolve) { window.resolveReady = resolve; });
+        </script>
+        <script>window.secondRan = typeof window.ready;</script>
+      </body></html>
+    HTML
+    browser = Dommy::Browser.new(html, strict: true)
+
+    assert_equal "object", browser.evaluate("window.secondRan"),
+      "the next script still runs, and sees the promise"
+    assert_equal "global", browser.evaluate("window.declared"),
+      "a <script> declares in global scope; discarding the completion value must not change that"
+    assert_empty browser.js_errors
+  ensure
+    browser&.dispose
+  end
+
+  # The same for an external script, which takes the compile-to-bytecode path.
+  def test_a_cached_script_ending_in_a_promise_is_not_an_error
+    win = Dommy.parse("<html><body></body></html>")
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(win)
+    rt.install_browser_globals
+    rt.load_script_cached("window.later = new Promise(function (r) { window.go = r; });",
+      cache_key: "http://example.test/app.js")
+
+    assert_equal "object", rt.evaluate("typeof window.later")
+  ensure
+    rt&.dispose
+  end
+
+  # An exception the HOST raised while evaluating carries Ruby frames. The page
+  # can read `error.stack`, so those paths would be published to it; an empty
+  # stack beats naming this gem's files, and beats a plausible-looking lie about
+  # where the page failed.
+  def test_a_host_error_does_not_hand_the_page_ruby_frames
+    win = Dommy.parse("<html><body></body></html>")
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(win)
+    rt.install_browser_globals
+
+    host = ::Quickjs::RuntimeError.new("raised by the host", nil)
+    host.set_backtrace([
+      "/Users/someone/lib/dommy/js/quickjs/backend.rb:82:in 'Quickjs::VM#eval_code'",
+      "/Users/someone/lib/dommy/js/quickjs/runtime.rb:133:in 'Runtime#load_script'"
+    ])
+    assert_equal "", rt.send(:js_frames, host),
+      "nothing here happened in JS, so the page is told nothing about where"
+    refute_nil rt.send(:rebuild_error, host), "it still gets a usable Error"
+
+    from_js = ::Quickjs::TypeError.new("thrown by the page", nil)
+    from_js.set_backtrace(["    at f (<code>:1:34)", "    at <eval> (<code>:2:2)"])
+    assert_equal "    at f (<code>:1:34)\n    at <eval> (<code>:2:2)", rt.send(:js_frames, from_js),
+      "engine frames are the page's own, and stay"
+  ensure
+    rt&.dispose
+  end
 end

@@ -1,0 +1,11 @@
+# Files under test/fixtures/wpt that are ours, not upstream's.
+#
+# script/vendor_wpt.sh never refreshes these: a refresh would replace them with
+# the upstream file of the same name and break the harness. Everything else here
+# is upstream at the revision in UPSTREAM_REVISION.
+
+# Upstream's version substitutes ports and hosts through wptserve at request
+# time. The single-VM runner serves every path regardless of host, so this is a
+# static get_host_info whose distinct hosts and schemes still resolve to the
+# same endpoints — enough for the fetch CORS mode checks.
+common/get-host-info.sub.js
