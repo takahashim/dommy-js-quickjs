@@ -17,6 +17,7 @@ module Dommy
         def initialize(**vm_opts)
           @backend = Backend.new(**vm_opts)
           @bridge = Dommy::Js::HostBridge.new(@backend)
+          @environment = BrowserEnvironment.new(@backend)
           @callback_error_listener = nil
           @js_halted = false
           # Opt-in diagnostics: the engine stringifies a non-Error rejection reason
@@ -56,52 +57,7 @@ module Dommy
             # loop processing model requires.
             win.scheduler.microtask_checkpoint = method(:drain_microtasks)
           end
-          @backend.eval(<<~JS)
-            // Remember where each timer was scheduled, so a throwing callback can
-            // be traced back to the code that set it up. This matters most for
-            // minified SPA bundles, where the thrown value is often a bare `null`
-            // with no stack of its own — the only locatable stack is the
-            // scheduling site. The origin Error is kept JS-side and only
-            // stringified if the callback actually throws (see
-            // __rbFetchTimerOrigin + handle_timer_error); a successful callback
-            // forgets its origin and the map is size-capped, so this stays cheap.
-            globalThis.__rbTimerOrigins = new Map();
-            const __rbDefer = (schedule, fn, delay) => {
-              if (typeof fn !== "function") return schedule(fn, delay);
-              const origin = new Error();
-              let id;
-              const wrapped = function () {
-                const result = fn.apply(this, arguments);
-                __rbTimerOrigins.delete(id); // ran cleanly — no need to keep it
-                return result;
-              };
-              id = schedule(wrapped, delay);
-              __rbTimerOrigins.set(id, origin);
-              if (__rbTimerOrigins.size > 4096) __rbTimerOrigins.delete(__rbTimerOrigins.keys().next().value);
-              return id;
-            };
-            globalThis.__rbFetchTimerOrigin = (id) => {
-              const origin = __rbTimerOrigins.get(id);
-              if (!origin) return "";
-              __rbTimerOrigins.delete(id);
-              return origin.stack || "";
-            };
-            globalThis.setTimeout = (fn, delay) => __rbDefer((f, d) => window.setTimeout(f, d), fn, delay);
-            globalThis.clearTimeout = (id) => window.clearTimeout(id);
-            globalThis.setInterval = (fn, delay) => __rbDefer((f, d) => window.setInterval(f, d), fn, delay);
-            globalThis.clearInterval = (id) => window.clearInterval(id);
-            globalThis.requestAnimationFrame = (fn) => __rbDefer((f) => window.requestAnimationFrame(f), fn);
-            globalThis.cancelAnimationFrame = (id) => window.cancelAnimationFrame(id);
-            // queueMicrotask must share the engine's promise-job (microtask)
-            // queue so its callbacks are FIFO-ordered with Promise reactions
-            // (the WHATWG single-microtask-queue model). Routing through the
-            // Ruby scheduler instead would drain on a separate pass, reordering
-            // it after all native promise jobs.
-            globalThis.queueMicrotask = (fn) => {
-              if (typeof fn !== "function") throw new TypeError("queueMicrotask requires a function");
-              Promise.resolve().then(() => { fn(); });
-            };
-          JS
+          @environment.install_timers
           win
         end
 
@@ -226,16 +182,6 @@ module Dommy
         # callable `(specifier, importer) -> source | {code:, as:} | nil`.
         def module_loader=(callable)
           @backend.module_loader = callable
-        end
-
-        # Evaluate an inline `<script type="module">` body as an ES module (run
-        # for side effects). Bare specifiers / absolute paths in its imports
-        # resolve through the module loader. Drains microtasks afterward.
-        def load_module(source)
-          bump_dom_epoch
-          @backend.import_module(source)
-          drain_microtasks
-          nil
         end
 
         # Evaluate an external module by URL (the loader fetches it); its
@@ -462,127 +408,18 @@ module Dommy
         # CSS / fetch / addEventListener / .... Call after install_window. This
         # is what lets real frontend bundles (Turbo, …) run unmodified.
         def install_browser_globals
-          alias_browser_globals
-          install_intl_polyfill
-          install_wasm_stub
-          mirror_builtins_on_window
+          @environment.install_globals
           self
         end
 
-        # This QuickJS build has no WebAssembly, so a bare `WebAssembly.foo`
-        # reference throws `'WebAssembly' is not defined` (nuxt.com via Shiki,
-        # many bundlers' feature probes). Define a stub: compile/instantiate
-        # reject and validate() returns false, so WASM-loading code takes its
-        # JS fallback instead of crashing. `Memory` honors `{shared:true}` (a
-        # SharedArrayBuffer) so WPT's common/sab.js keeps working.
-        def install_wasm_stub
-          @backend.eval(WASM_STUB_JS)
-          self
-        end
-
-        WASM_STUB_JS = <<~'JS'
-          if (typeof globalThis.WebAssembly === "undefined") {
-            var unsupported = function () { return Promise.reject(new Error("WebAssembly is not supported")); };
-            var throwUnsupported = function () { throw new Error("WebAssembly is not supported"); };
-            globalThis.WebAssembly = {
-              instantiate: unsupported, instantiateStreaming: unsupported,
-              compile: unsupported, compileStreaming: unsupported,
-              validate: function () { return false; },
-              Module: throwUnsupported, Instance: throwUnsupported,
-              Memory: function (opts) {
-                var bytes = ((opts && opts.initial) || 0) * 65536;
-                this.buffer = (opts && opts.shared && typeof SharedArrayBuffer === "function")
-                  ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
-              },
-              Table: function () {}, Global: function () {},
-              CompileError: Error, LinkError: Error, RuntimeError: Error,
-            };
-          }
-        JS
-
-        # This QuickJS build ships without ICU, so `Intl` is undefined and any
-        # page touching `Intl.NumberFormat` / `DateTimeFormat` / … throws
-        # `'Intl' is not defined` (nuxt.com, i18n libraries, …). Install a small
-        # locale-naive polyfill: it formats reasonably (grouped numbers, ISO-ish
-        # dates) so pages run instead of crashing, without pulling in full ICU.
-        def install_intl_polyfill
-          @backend.eval(INTL_POLYFILL_JS)
-          self
-        end
-
-        INTL_POLYFILL_JS = <<~'JS'
-          if (typeof globalThis.Intl === "undefined") {
-            var I = {};
-            var group = function (s) {
-              var p = String(s).split(".");
-              p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-              return p.join(".");
-            };
-            function NumberFormat(l, o) { this.o = o || {}; }
-            NumberFormat.prototype.format = function (n) {
-              n = Number(n); var o = this.o;
-              if (o.style === "percent") n *= 100;
-              var max = o.maximumFractionDigits;
-              if (max == null && o.style === "currency") max = 2;
-              var s = group(max == null ? String(n) : n.toFixed(max));
-              if (o.style === "percent") s += "%";
-              if (o.style === "currency" && o.currency) s = o.currency + " " + s;
-              return s;
-            };
-            NumberFormat.prototype.formatToParts = function (n) { return [{ type: "literal", value: this.format(n) }]; };
-            NumberFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", numberingSystem: "latn", style: "decimal" }, this.o); };
-            function DateTimeFormat(l, o) { this.o = o || {}; }
-            DateTimeFormat.prototype.format = function (d) {
-              d = d == null ? new Date() : new Date(d);
-              if (isNaN(d.getTime())) return "";
-              try { return d.toLocaleString(); } catch (e) { return d.toString(); }
-            };
-            DateTimeFormat.prototype.formatToParts = function (d) { return [{ type: "literal", value: this.format(d) }]; };
-            DateTimeFormat.prototype.formatRange = function (a, b) { return this.format(a) + " – " + this.format(b); };
-            DateTimeFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", calendar: "gregory", numberingSystem: "latn", timeZone: "UTC" }, this.o); };
-            function Collator(l, o) { this.o = o || {}; }
-            Collator.prototype.compare = function (a, b) { a = String(a); b = String(b); return a < b ? -1 : a > b ? 1 : 0; };
-            Collator.prototype.resolvedOptions = function () { return Object.assign({ locale: "en" }, this.o); };
-            function PluralRules(l, o) { this.o = o || {}; }
-            PluralRules.prototype.select = function (n) { return Number(n) === 1 ? "one" : "other"; };
-            PluralRules.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", type: "cardinal" }, this.o); };
-            function RelativeTimeFormat(l, o) { this.o = o || {}; }
-            RelativeTimeFormat.prototype.format = function (v, u) { return v + " " + u + (Math.abs(v) === 1 ? "" : "s"); };
-            RelativeTimeFormat.prototype.formatToParts = function (v, u) { return [{ type: "literal", value: this.format(v, u) }]; };
-            RelativeTimeFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", numeric: "always", style: "long" }, this.o); };
-            function ListFormat(l, o) { this.o = o || {}; }
-            ListFormat.prototype.format = function (a) { return Array.from(a || []).join(", "); };
-            ListFormat.prototype.formatToParts = function (a) { return [{ type: "element", value: this.format(a) }]; };
-            ListFormat.prototype.resolvedOptions = function () { return Object.assign({ locale: "en", type: "conjunction", style: "long" }, this.o); };
-            I.NumberFormat = NumberFormat; I.DateTimeFormat = DateTimeFormat; I.Collator = Collator;
-            I.PluralRules = PluralRules; I.RelativeTimeFormat = RelativeTimeFormat; I.ListFormat = ListFormat;
-            ["NumberFormat", "DateTimeFormat", "Collator", "PluralRules", "RelativeTimeFormat", "ListFormat"].forEach(function (k) {
-              I[k].supportedLocalesOf = function (locs) { return Array.isArray(locs) ? locs.slice() : locs ? [locs] : []; };
-            });
-            I.getCanonicalLocales = function (locs) { return Array.isArray(locs) ? locs.slice() : locs ? [String(locs)] : []; };
-            globalThis.Intl = I;
-          }
-        JS
-
-        # WPT-only scaffolding: a minimal `WebAssembly.Memory` whose `.buffer`
-        # is a SharedArrayBuffer. The engine ships a real SharedArrayBuffer but
-        # no WebAssembly, and WPT's `common/sab.js` derives the SAB constructor
-        # from `new WebAssembly.Memory({shared:true}).buffer.constructor`. This
-        # is test-harness-only (real pages never need it), so it is opt-in and
-        # NOT part of #install_browser_globals.
+        # WPT-only scaffolding, part of the Runtime port's optional surface: the
+        # harness's common/sab.js derives the SharedArrayBuffer constructor from
+        # `new WebAssembly.Memory({shared:true}).buffer.constructor`. That is
+        # what the stub's Memory already yields, so this is the same install —
+        # named separately because a host asks for it explicitly, and idempotent
+        # when #install_browser_globals already ran.
         def install_wasm_memory_shim
-          @backend.eval(<<~JS)
-            if (typeof globalThis.WebAssembly === "undefined" && typeof globalThis.SharedArrayBuffer === "function") {
-              globalThis.WebAssembly = {
-                Memory: function (opts) {
-                  const bytes = ((opts && opts.initial) || 0) * 65536;
-                  this.buffer = (opts && opts.shared)
-                    ? new SharedArrayBuffer(bytes)
-                    : new ArrayBuffer(bytes);
-                },
-              };
-            }
-          JS
+          @environment.install_wasm_stub
           self
         end
 
@@ -671,67 +508,6 @@ module Dommy
                .reject { |line| line.include?("__rbDefer") }
         rescue StandardError
           []
-        end
-
-        # Alias the bare browser globals frameworks reach for onto the installed
-        # window (self/parent/top/location/history/navigator/storages/CSS/fetch/
-        # event methods). This is what lets real frontend bundles run unmodified.
-        def alias_browser_globals
-          @backend.eval(<<~JS)
-            globalThis.self = globalThis;
-            // Top-level window: parent/top are the window itself (spec), so
-            // frame-walking loops terminate instead of dereferencing undefined.
-            globalThis.parent = globalThis;
-            globalThis.top = globalThis;
-            // `frames` is the window itself, indexable by child-frame number
-            // (`frames[0]` === the first <iframe>'s contentWindow).
-            globalThis.frames = window;
-            globalThis.location = window.location;
-            globalThis.history = window.history;
-            globalThis.navigator = window.navigator;
-            globalThis.sessionStorage = window.sessionStorage;
-            globalThis.localStorage = window.localStorage;
-            globalThis.CSS = window.CSS;
-            globalThis.getComputedStyle = (...args) => window.getComputedStyle(...args);
-            globalThis.matchMedia = (...args) => window.matchMedia(...args);
-            globalThis.fetch = (...args) => window.fetch(...args);
-            globalThis.addEventListener = (...args) => window.addEventListener(...args);
-            globalThis.removeEventListener = (...args) => window.removeEventListener(...args);
-            globalThis.dispatchEvent = (event) => window.dispatchEvent(event);
-
-            // More bare globals frameworks read directly (e.g. performance.now(),
-            // crypto, screen). Objects/values are aliased by reference; methods are
-            // wrapped so `this` binds to the window. All already exist on window.
-            for (const __n of ["performance", "crypto", "screen", "visualViewport",
-                               "indexedDB", "caches", "devicePixelRatio",
-                               "innerWidth", "innerHeight", "scrollX", "scrollY", "pageXOffset"]) {
-              try { globalThis[__n] = window[__n]; } catch (__e) {}
-            }
-            for (const __m of ["scrollTo", "scrollBy", "requestIdleCallback", "cancelIdleCallback",
-                               "getSelection", "structuredClone", "reportError", "btoa", "atob",
-                               "alert", "confirm", "prompt", "open", "postMessage"]) {
-              try { globalThis[__m] = (...args) => window[__m](...args); } catch (__e) {}
-            }
-          JS
-        end
-
-        # The window IS the global object, so JS built-in constructors and
-        # namespaces are also `window` properties (`window.String`,
-        # `window.Number`, …). Mirror them as own props on the window proxy so
-        # code that reads constructors off `window` (e.g. the WPT reflection
-        # harness's `window[type]` casts) resolves them.
-        def mirror_builtins_on_window
-          @backend.eval(<<~JS)
-            for (const __n of [
-              "String", "Boolean", "Number", "BigInt", "Symbol", "Object", "Array",
-              "Function", "Date", "RegExp", "Promise", "Map", "Set", "WeakMap",
-              "WeakSet", "Math", "JSON", "Reflect", "Proxy", "Error", "TypeError",
-              "RangeError", "SyntaxError", "Infinity", "NaN", "undefined",
-              "parseInt", "parseFloat", "isNaN", "isFinite", "globalThis",
-            ]) {
-              try { window[__n] = globalThis[__n]; } catch (__e) {}
-            }
-          JS
         end
 
         def eval_tagged(inner_expr)

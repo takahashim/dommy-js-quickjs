@@ -2,29 +2,37 @@
 
 require "quickjs"
 
-# Performance: the quickjs gem wraps EVERY host-function call — every JS->Ruby
-# DOM crossing (__rb_host_get / _call / _set, …) — in `Timeout.timeout` to bound
-# a runaway Ruby callback. That costs ~4us per crossing (≈40% of a DOM property
-# read: 9.8us -> 5.1us with it removed), and a DOM-heavy SPA (React/Apollo) makes
-# MILLIONS of crossings while hydrating — tens of seconds of pure Timeout
-# overhead, the dominant cost behind a slow page.
-#
-# It is redundant here: QuickJS's own C interrupt handler still force-aborts a
-# runaway JS execution at the eval timeout (that mechanism is independent of this
-# Ruby wrapper), and Dommy's host functions are bounded DOM operations that never
-# hang. So skip the per-crossing Ruby Timeout. Set DOMMY_JS_CROSSING_TIMEOUT=1 to
-# keep the gem's original behavior (re-enabling the Ruby-callback-hang guard).
-if ::Quickjs.respond_to?(:_with_timeout) && ENV["DOMMY_JS_CROSSING_TIMEOUT"].to_s.empty?
-  module Quickjs
-    def self._with_timeout(_msec, proc, args)
-      proc.call(*args)
-    end
-  end
-end
-
 module Dommy
   module Js
     module Quickjs
+      # Skips the per-crossing Ruby `Timeout.timeout` the quickjs gem wraps EVERY
+      # host-function call in — every JS->Ruby DOM crossing (__rb_host_get /
+      # _call / _set, …). That costs ~4us per crossing (≈40% of a DOM property
+      # read: 9.8us -> 5.1us without it), and a DOM-heavy SPA (React/Apollo)
+      # makes MILLIONS of them while hydrating — tens of seconds of pure Timeout
+      # overhead, the dominant cost behind a slow page.
+      #
+      # It is redundant here: QuickJS's own C interrupt handler still
+      # force-aborts a runaway JS execution at the eval timeout (independent of
+      # this Ruby wrapper), and Dommy's host functions are bounded DOM
+      # operations that never hang. DOMMY_JS_CROSSING_TIMEOUT=1 keeps the gem's
+      # behavior, re-enabling the Ruby-callback-hang guard.
+      #
+      # Prepended to `::Quickjs`'s singleton rather than redefining the method:
+      # the gem's own implementation stays in the ancestor chain (reachable with
+      # `super`, visible in `::Quickjs.singleton_class.ancestors`), so the patch
+      # can be seen and undone. Redefining it outright left no way to tell the
+      # method had been replaced.
+      module SkipCrossingTimeout
+        def _with_timeout(_msec, proc, args)
+          proc.call(*args)
+        end
+      end
+
+      if ::Quickjs.respond_to?(:_with_timeout) && ENV["DOMMY_JS_CROSSING_TIMEOUT"].to_s.empty?
+        ::Quickjs.singleton_class.prepend(SkipCrossingTimeout)
+      end
+
       # Binds HostBridge's abstract backend contract to the `quickjs` gem.
       #
       # Value-representation conformance: host_runtime.js now tags a top-level JS
@@ -126,12 +134,6 @@ module Dommy
         # static/dynamic `import`. nil clears it (engine default loader).
         def module_loader=(callable)
           @vm.module_loader = callable
-        end
-
-        # Evaluate `source` as an ES module (its `import`s resolved through the
-        # module loader). `* as` with no globalization runs it for side effects.
-        def import_module(source)
-          @vm.import("* as __dommy_mod", from: source, code_to_expose: "")
         end
 
         # Evaluate the module at `url` (resolved + fetched by the module loader).
