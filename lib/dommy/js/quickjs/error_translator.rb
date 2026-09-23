@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "json"
-
 module Dommy
   module Js
     module Quickjs
@@ -53,17 +51,12 @@ module Dommy
           # Deliberately NOT through an evaluate that drives the event loop: this
           # runs while the page is still booting its scripts, and a due-now timer
           # from an earlier script would fire before the next `<script>`, which
-          # no browser does. A bare tagged eval only builds the object and
-          # marshals it.
-          @bridge.decode(@backend.eval(<<~JS))
-            __rbHost.tag((function () {
-              var Ctor = globalThis[#{::JSON.generate(js_error_name(error))}];
-              var e = new (typeof Ctor === "function" ? Ctor : Error)(#{::JSON.generate(error.message.to_s)});
-              var stack = #{::JSON.generate(js_frames(error))};
-              if (stack) { try { e.stack = stack; } catch (_) {} }
-              return e;
-            })());
-          JS
+          # no browser does. Calling the realm's helper (see js/error_rebuild.js)
+          # only builds the object and marshals it.
+          @bridge.decode(
+            @backend.call_js("__rbDommyRebuildError",
+              js_error_name(error), error.message.to_s, js_frames(error))
+          )
         rescue ::StandardError
           nil
         end

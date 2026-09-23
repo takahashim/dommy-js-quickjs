@@ -26,6 +26,7 @@ module Dommy
           @bridge = Dommy::Js::HostBridge.new(@backend)
           @environment = BrowserEnvironment.new(@backend)
           @errors = ErrorTranslator.new(@backend, @bridge)
+          @environment.install_error_rebuilder
           @loop = EventLoop.new(@backend, scheduler: -> { @window&.scheduler }) do |error|
             @callback_error_listener&.call(error)
           end
@@ -90,10 +91,7 @@ module Dommy
         # trailing Promise expression would trip the gem's "unawaited Promise"
         # guard. Drains microtasks so queued .then work lands before returning.
         def execute(js)
-          bump_dom_epoch
-          @backend.eval("(function () {\n#{js}\n})();")
-          drain_microtasks
-          nil
+          in_page_turn { @backend.eval("(function () {\n#{js}\n})();") }
         end
 
         # Load a script the way a browser <script> does: in GLOBAL scope, so its
@@ -102,20 +100,16 @@ module Dommy
         # `var Vue = (function(){…})({})`, which an IIFE wrapper (execute) would
         # trap in function scope. Drains microtasks afterward.
         def load_script(js)
-          bump_dom_epoch
-          @backend.eval(discard_completion_value(js))
-          drain_microtasks
-          nil
+          in_page_turn { @backend.eval(discard_completion_value(js)) }
         end
 
         # Like #load_script, but compiles the source to bytecode once per
         # `cache_key` (an external script's URL) and reuses it across VMs —
         # avoiding a re-parse of large vendored bundles on every page load.
         def load_script_cached(js, cache_key:)
-          bump_dom_epoch
-          @backend.run_compiled(ScriptCache.compiled(cache_key, discard_completion_value(js)))
-          drain_microtasks
-          nil
+          in_page_turn do
+            @backend.run_compiled(ScriptCache.compiled(cache_key, discard_completion_value(js)))
+          end
         end
 
         # Install the ESM module resolver (see Backend#module_loader=). A
@@ -129,10 +123,7 @@ module Dommy
         # here too, seeded under a page URL by ScriptBoot so `import.meta.url`
         # resolves. Drains microtasks.
         def load_module_url(url)
-          bump_dom_epoch
-          @backend.import_module_url(url)
-          drain_microtasks
-          nil
+          in_page_turn { @backend.import_module_url(url) }
         end
 
         # Evaluate JS and return its value, with DOM nodes decoded to Dommy
@@ -315,6 +306,22 @@ module Dommy
         # that evaluates to undefined instead. The leading newline is what keeps
         # it out of a trailing line comment, and no declaration moves scope.
         def discard_completion_value(js) = "#{js}\n;void 0;"
+
+        # One turn of handing the page something to run. Ruby may have mutated the
+        # DOM since JS last ran, so the bridge's attribute snapshots are
+        # invalidated first; then the work runs; then queued `.then` work lands
+        # before the caller gets control back.
+        #
+        # Every entry point that gives the page code goes through here, so a new
+        # one cannot forget either half. Forgetting the first would be the quiet
+        # kind of bug: the page reads attribute values that are no longer true,
+        # and nothing raises.
+        def in_page_turn
+          bump_dom_epoch
+          yield
+          drain_microtasks
+          nil
+        end
 
         # Ruby -> JS entry: Ruby code (test drivers, script boot) may have
         # mutated the DOM since JS last ran, so invalidate the bridge's

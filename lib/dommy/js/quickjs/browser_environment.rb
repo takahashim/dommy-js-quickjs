@@ -33,14 +33,22 @@ module Dommy
         WINDOW_BUILTINS_JS = payload("window_builtins.js")
         INTL_POLYFILL_JS = payload("intl_polyfill.js")
         WASM_STUB_JS = payload("wasm_stub.js")
+        ERROR_REBUILD_JS = payload("error_rebuild.js")
 
         # Nothing outside installs a payload by hand; the methods below are the
         # way in.
         private_constant :TIMER_GLOBALS_JS, :BROWSER_GLOBALS_JS, :WINDOW_BUILTINS_JS,
-          :INTL_POLYFILL_JS, :WASM_STUB_JS
+          :INTL_POLYFILL_JS, :WASM_STUB_JS, :ERROR_REBUILD_JS
 
         def initialize(backend)
           @backend = backend
+        end
+
+        # The helper ErrorTranslator calls to rebuild a thrown Error inside the
+        # realm. Installed with the runtime rather than with the page globals:
+        # an engine exception can reach a host that never asked for a browser.
+        def install_error_rebuilder
+          run("error_rebuild.js", ERROR_REBUILD_JS)
         end
 
         # setTimeout / setInterval / requestAnimationFrame / queueMicrotask, as

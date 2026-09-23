@@ -76,6 +76,9 @@ module Dommy
           pump(max_iterations) do |scheduler|
             before = scheduler.now_ms
             scheduler.advance_time(0) # due-now timers + microtasks, no clock jump
+            # Not redundant with the pump's own drains: a timer that just ran may
+            # have queued the microtask that schedules the next animation frame,
+            # and the check below has to see it.
             drain_microtasks
 
             frame_at = scheduler.next_animation_frame_at
@@ -113,6 +116,8 @@ module Dommy
           true
         end
 
+        private
+
         # The VM is poisoned. Surface the failure ONCE (a repeated drain would
         # otherwise report it every tick) so the host sees that the page's
         # JavaScript stopped, then leave it to the no-op guards.
@@ -123,8 +128,6 @@ module Dommy
           @on_halt&.call(error)
           nil
         end
-
-        private
 
         # Drain, then let the policy move the clock; stop when it reports there
         # is nothing left to do, when there is no scheduler to drive, or when the

@@ -51,8 +51,12 @@ module Dommy
           self.time_pump = -> { @dommy_js_host.pump }
         end
 
+        # The JS host bound to the CURRENT session. Reading `rack_session` is what
+        # (re)binds one, because the attach lives in that override — so this is a
+        # fetch with a deliberate side effect, not a plain reader. Capybara swaps
+        # the session on reset! / app_host, and the host has to follow.
         def dommy_js_host
-          rack_session # ensures the host is attached for the current session
+          rack_session
           @dommy_js_host
         end
 
