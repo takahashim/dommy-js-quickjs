@@ -9,8 +9,15 @@
 
 ### Changed
 
-- Requires `quickjs ~> 0.21.0` (was `~> 0.18.0`). Until the fix is released upstream, the Gemfile points at [takahashim/quickjs.rb#fix/unhandled-rejection-checkpoint-timing](https://github.com/takahashim/quickjs.rb/tree/fix/unhandled-rejection-checkpoint-timing), which reports an unhandled rejection at the end of the microtask checkpoint as HTML requires, rather than the moment a promise rejects. Without it, `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are both misreported as unhandled — correct code that a strict host then fails a test on.
+- Requires `dommy >= 0.13.0` (was `>= 0.10.0`), the release carrying the JS error-report API this gem's suite drives (`Window#__internal_on_unhandled_error__`, `Browser#error_log`, `Dommy::JsError`).
+- Requires `quickjs ~> 0.21.0` (was `~> 0.18.0`). Until both fixes are released upstream, the Gemfile pins [takahashim/quickjs.rb#feat/rejection-js-hook](https://github.com/takahashim/quickjs.rb/tree/feat/rejection-js-hook). It carries the JS rejection hook above, and sits on the checkpoint-timing fix ([hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141)) that reports an unhandled rejection at the end of the microtask checkpoint as HTML requires, rather than the moment a promise rejects. Without the latter, `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are both misreported as unhandled — correct code that a strict host then fails a test on.
 - The QuickJS engine 0.21 vendors compiles a `for...of` whose iterable contains a `yield`, which 0.18 failed on. `SourceGuard` stays as the Backend's retry path, but the construct no longer needs it.
+- The vendored WPT tree is pinned to a single upstream revision (`test/fixtures/wpt/UPSTREAM_REVISION`) and refreshed with `script/vendor_wpt.sh`, rather than growing file by file from whatever upstream was that day. Refreshing to `2f7c700` moved 24 files; `url-constructor.any.js` is green again, since upstream now expects an undecodable A-label like `https://xn--/` to parse.
+
+### Fixed
+
+- A classic script whose completion value is a pending Promise — `window.p = new Promise(...)` as its last statement, the idiom for publishing one a later script awaits — no longer reaches the page as an uncaught error. The gem refuses to convert such a value, and the resulting host exception was reported at the window; a testharness page that saw it reported no results at all. `#load_script` and `#load_script_cached` now discard the completion value, which `#execute` already did by wrapping in an IIFE.
+- `Runtime#rebuild_error` no longer copies a host exception's Ruby backtrace into the rebuilt Error's `stack`, which published this gem's file paths to any page that reads it. Engine frames are kept, everything else dropped, and a backtrace with no JS frames leaves the stack empty rather than naming a place the page did not fail.
 
 ## 0.9.0 — 2026-06-22
 
