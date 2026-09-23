@@ -113,7 +113,7 @@ module Dommy
         # through #get / #call — so what it needs is the tags and nothing else.
         def pack(value)
           case value
-          when JSValue then {WireTags::JS_REF => value.ref}
+          when JSValue then {Dommy::Bridge::WireTags::JS_REF => value.ref}
           when nil, true, false, Integer, Float, String then value
           when Symbol then value.to_s
           when Array then value.map { |e| pack(e) }
@@ -128,14 +128,14 @@ module Dommy
         def unpack(value)
           case value
           when Hash
-            if value.key?(WireTags::JS_REF)
-              JSValue.new(value[WireTags::JS_REF])
-            elsif value.key?(WireTags::UNDEFINED)
+            if value.key?(Dommy::Bridge::WireTags::JS_REF)
+              JSValue.new(value[Dommy::Bridge::WireTags::JS_REF])
+            elsif value.key?(Dommy::Bridge::WireTags::UNDEFINED)
               nil
-            elsif value.key?(WireTags::BYTES)
-              value[WireTags::BYTES]
-            elsif value.key?(WireTags::ARRAY_BUFFER)
-              value[WireTags::ARRAY_BUFFER]
+            elsif value.key?(Dommy::Bridge::WireTags::BYTES)
+              value[Dommy::Bridge::WireTags::BYTES]
+            elsif value.key?(Dommy::Bridge::WireTags::ARRAY_BUFFER)
+              value[Dommy::Bridge::WireTags::ARRAY_BUFFER]
             else
               value.each_with_object({}) { |(k, v), h| h[k] = unpack(v) }
             end
