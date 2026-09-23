@@ -513,7 +513,7 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     rt.install_window(win)
     rt.install_browser_globals
     rt.load_script_cached("window.later = new Promise(function (r) { window.go = r; });",
-      cache_key: "http://example.test/app.js")
+      cache_key: "http://example.test/completion-value.js")
 
     assert_equal "object", rt.evaluate("typeof window.later")
   ensure

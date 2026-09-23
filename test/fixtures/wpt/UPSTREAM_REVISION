@@ -1,0 +1,3 @@
+# The upstream web-platform-tests revision every file here was taken from.
+# Refresh with: script/vendor_wpt.sh --rev <sha>
+2f7c70099b6ecc6a1f6a821217afd79b6ff81f28
