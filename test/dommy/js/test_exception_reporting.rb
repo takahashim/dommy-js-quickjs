@@ -155,6 +155,93 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     browser&.dispose
   end
 
+  # --- Where the error happened ---
+
+  def test_an_external_script_reports_its_own_url_and_position
+    resources = Dommy::Resources.static(
+      "/reports-position.js" => {"content_type" => "application/javascript",
+                    "body" => "function inner() { throw new Error('deep') }\ninner();"}
+    )
+    html = <<~HTML
+      <html><body>
+        <script>window.__at = null; window.onerror = function (m, f, l, c) { window.__at = [f, l, c]; };</script>
+        <script src="/reports-position.js"></script>
+      </body></html>
+    HTML
+    browser = Dommy::Browser.new(html, url: "http://example.test/", resources: resources, strict: false)
+    file, line, column = browser.evaluate("window.__at")
+
+    assert_equal "http://example.test/reports-position.js", file
+    assert_equal 1, line
+    assert_operator column, :>, 0
+  ensure
+    browser&.dispose
+  end
+
+  # A listener's throw crosses as an opaque JS value, so its frames have to
+  # travel with the throw or the position is lost.
+  def test_a_listener_error_reports_a_position
+    html = <<~HTML
+      <html><body><script>
+        window.__at = null;
+        window.onerror = function (m, f, l, c) { window.__at = [f, l, c]; };
+        document.body.addEventListener("click", function () { throw new Error("listener"); });
+      </script></body></html>
+    HTML
+    browser = Dommy::Browser.new(html, url: "http://example.test/page", strict: false)
+    browser.execute("document.body.click()")
+    file, line, column = browser.evaluate("window.__at")
+
+    assert_equal "http://example.test/page", file, "an inline script reports the document URL"
+    assert_operator line, :>, 0
+    assert_operator column, :>, 0
+  ensure
+    browser&.dispose
+  end
+
+  # --- A dynamically inserted script ---
+
+  def test_a_script_that_downloaded_and_then_threw_still_fires_load
+    resources = Dommy::Resources.static(
+      "/threw-after-download.js" => {"content_type" => "application/javascript", "body" => "throw new Error('in the chunk');"}
+    )
+    browser = Dommy::Browser.new("<html><body></body></html>", resources: resources, strict: false)
+    browser.execute(<<~JS)
+      window.__ev = [];
+      var s = document.createElement("script");
+      s.src = "/threw-after-download.js";
+      s.onload = function () { window.__ev.push("load"); };
+      s.onerror = function () { window.__ev.push("error"); };
+      document.head.appendChild(s);
+    JS
+    browser.settle
+
+    assert_equal ["load"], browser.evaluate("window.__ev"),
+      "the element's error event means the FETCH failed; this one downloaded fine"
+    assert(browser.js_errors.any? { |e| e.message.to_s.include?("in the chunk") },
+      "the evaluation's exception is still reported")
+  ensure
+    browser&.dispose
+  end
+
+  def test_a_script_that_failed_to_download_fires_error
+    browser = Dommy::Browser.new("<html><body></body></html>",
+      resources: Dommy::Resources.static({}), strict: false)
+    browser.execute(<<~JS)
+      window.__ev = [];
+      var s = document.createElement("script");
+      s.src = "/never-downloaded.js";
+      s.onload = function () { window.__ev.push("load"); };
+      s.onerror = function () { window.__ev.push("error"); };
+      document.head.appendChild(s);
+    JS
+    browser.settle
+
+    assert_equal ["error"], browser.evaluate("window.__ev")
+  ensure
+    browser&.dispose
+  end
+
   # --- reportError ---
 
   def test_report_error_reaches_window_onerror_and_the_host
