@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Dommy
   module Js
     module Quickjs
@@ -140,6 +142,52 @@ module Dommy
           @backend.run_compiled(ScriptCache.compiled(cache_key, js))
           drain_microtasks
           nil
+        end
+
+        # Rebuild a script\'s thrown value as a real Error inside the realm.
+        #
+        # QuickJS raises a HOST exception when an evaluated script throws, so by
+        # the time we see it the JS value is gone: its message and frames
+        # survive as a Ruby exception, the object itself does not. Handing that
+        # husk to the page gives a handler an object with no `message` and no
+        # `stack`, which is worse than useless — reading either throws, so the
+        # handler dies before it can cancel the report.
+        #
+        # An equivalent Error is built in the realm instead, carrying the same
+        # name, message and frames. Everything a handler observes matches what
+        # it threw; what it cannot do is compare identity (`e.error === thrown`),
+        # since the original was freed before we were told about it. Preserving
+        # that needs the engine to hand the value over instead of converting it.
+        #
+        # Returns nil for anything that did not come from JS (a host bug) and
+        # for any failure to rebuild, so the caller falls back to what it caught.
+        def rebuild_error(error)
+          return nil unless error.is_a?(::Quickjs::RuntimeError)
+
+          # Deliberately NOT #evaluate: that drives the event loop, and this runs
+          # while the page is still booting its scripts — a due-now timer from an
+          # earlier script would fire before the next `<script>`, which no browser
+          # does. A bare tagged eval only builds the object and marshals it.
+          @bridge.decode(@backend.eval(<<~JS))
+            __rbHost.tag((function () {
+              var Ctor = globalThis[#{::JSON.generate(js_error_name(error))}];
+              var e = new (typeof Ctor === "function" ? Ctor : Error)(#{::JSON.generate(error.message.to_s)});
+              var stack = #{::JSON.generate(Array(error.backtrace).join("\n"))};
+              if (stack) { try { e.stack = stack; } catch (_) {} }
+              return e;
+            })());
+          JS
+        rescue ::StandardError
+          nil
+        end
+
+        # The JS constructor name behind a converted exception. quickjs.rb maps
+        # each standard error to its own subclass (`Quickjs::TypeError` for a JS
+        # `TypeError`), and uses the generic `RuntimeError` for a plain `Error`
+        # and for a thrown non-Error.
+        def js_error_name(error)
+          name = error.class.name.to_s.split("::").last.to_s
+          name == "RuntimeError" ? "Error" : name
         end
 
         # Install the ESM module resolver (see Backend#module_loader=). A

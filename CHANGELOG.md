@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `Runtime#rebuild_error` builds a real `Error` inside the realm from an exception QuickJS raised for a script's throw, so `event.error` reaches the page with the name, message and stack it threw instead of an object with no properties. The engine discards the JS value when it converts the throw, so the rebuilt error matches on everything observable except identity.
+
 ### Changed
 
 - Requires `quickjs ~> 0.21.0` (was `~> 0.18.0`). Until the fix is released upstream, the Gemfile points at [takahashim/quickjs.rb#fix/unhandled-rejection-checkpoint-timing](https://github.com/takahashim/quickjs.rb/tree/fix/unhandled-rejection-checkpoint-timing), which reports an unhandled rejection at the end of the microtask checkpoint as HTML requires, rather than the moment a promise rejects. Without it, `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are both misreported as unhandled — correct code that a strict host then fails a test on.

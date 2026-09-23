@@ -74,6 +74,97 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     browser&.dispose
   end
 
+  # --- What the page is handed as event.error ---
+
+  # A handler reads `.message` / `.stack` off the error before deciding what to
+  # do, so those have to be there: one that throws while reading them never
+  # reaches its own preventDefault, and the report it meant to cancel stands.
+  def test_a_script_error_reaches_the_page_as_a_real_error
+    html = <<~HTML
+      <html><body>
+        <script>
+          window.__seen = null;
+          window.addEventListener("error", function (e) {
+            window.__seen = {
+              isError: e.error instanceof Error,
+              name: e.error.name,
+              message: e.error.message,
+              hasStack: typeof e.error.stack === "string" && e.error.stack.length > 0
+            };
+            e.preventDefault();
+          });
+        </script>
+        <script>throw new TypeError("from the script");</script>
+      </body></html>
+    HTML
+    # strict: true — the handler cancels, so nothing is left to fail on. That
+    # only holds if reading the error did not throw first.
+    browser = Dommy::Browser.new(html, strict: true)
+    seen = browser.evaluate("window.__seen")
+
+    assert seen["isError"], "the page gets an Error, not an opaque husk"
+    assert_equal "TypeError", seen["name"]
+    assert_equal "from the script", seen["message"]
+    assert seen["hasStack"]
+    assert_empty browser.js_errors, "the page handled it, so the host never hears"
+  ensure
+    browser&.dispose
+  end
+
+  # The engine discards the thrown value before the host hears about it, so the
+  # Error the page gets is an equivalent rebuilt in the realm. Everything it can
+  # observe matches; comparing identity is the one thing it cannot do.
+  def test_a_rebuilt_error_is_not_the_identical_object
+    html = <<~HTML
+      <html><body>
+        <script>
+          window.__same = null;
+          window.__thrown = new Error("mine");
+          window.addEventListener("error", function (e) { window.__same = (e.error === window.__thrown); });
+        </script>
+        <script>throw window.__thrown;</script>
+      </body></html>
+    HTML
+    browser = Dommy::Browser.new(html, strict: false)
+
+    refute browser.evaluate("window.__same")
+  ensure
+    browser&.dispose
+  end
+
+  # Rebuilding must not run the event loop: a due-now timer from an earlier
+  # script would fire before the next one, which no browser does.
+  def test_rebuilding_does_not_disturb_script_order
+    # The order is recorded in the DOM rather than a JS global, because reading
+    # it back with `evaluate` would itself drive the loop and fire the timer.
+    html = <<~HTML
+      <html><head><title></title></head><body>
+        <script>
+          window.note = function (s) { document.title += (document.title ? "," : "") + s; };
+          setTimeout(function () { note("timer"); }, 0);
+        </script>
+        <script>note("threw"); throw new Error("boom");</script>
+        <script>note("next script");</script>
+      </body></html>
+    HTML
+    browser = Dommy::Browser.new(html, strict: false, settle: false)
+
+    assert_equal "threw,next script", browser.document.title,
+      "the timer is still pending when the last script runs"
+  ensure
+    browser&.dispose
+  end
+
+  def test_the_host_still_logs_the_engine_exception
+    html = '<html><body><script>throw new TypeError("for the log");</script></body></html>'
+    browser = Dommy::Browser.new(html, strict: false)
+
+    assert(browser.js_errors.any? { |e| e.message.to_s.include?("for the log") },
+      "rebuilding is for the page; the host keeps the engine's own exception")
+  ensure
+    browser&.dispose
+  end
+
   # --- A throwing timer callback ---
 
   def test_a_throwing_timer_callback_is_reported_at_the_window
