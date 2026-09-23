@@ -4,6 +4,7 @@
 
 ### Added
 
+- Rejections are handed to a JS hook (`promise_rejection_hook=`) when the engine has one, so the promise and the reason cross as the values the page threw rather than an exception the engine already converted. That is what makes `event.reason`, `event.promise` and `rejectionhandled` work at all. `on_unhandled_rejection` goes quiet while the hook is installed, since both would report the same rejection.
 - `Runtime#rebuild_error` builds a real `Error` inside the realm from an exception QuickJS raised for a script's throw, so `event.error` reaches the page with the name, message and stack it threw instead of an object with no properties. The engine discards the JS value when it converts the throw, so the rebuilt error matches on everything observable except identity.
 
 ### Changed

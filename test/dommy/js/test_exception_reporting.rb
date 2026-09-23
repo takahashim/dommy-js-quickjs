@@ -333,6 +333,132 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     browser&.dispose
   end
 
+  # --- Promise rejection tracking, end to end ---
+  #
+  # These need the engine\'s JS rejection hook: without it the engine converts
+  # the rejection to a host exception before anyone sees it, so the promise and
+  # the reason are gone and `rejectionhandled` never happens at all.
+
+  def skip_without_hook
+    return if Dommy::Js::Quickjs::Backend.new.respond_to?(:promise_rejection_hook=)
+
+    skip "needs the engine\'s promise_rejection_hook"
+  end
+
+  REJECTION_PAGE = <<~HTML
+    <html><body><script>
+      window.seen = {};
+      window.addEventListener("unhandledrejection", function (e) {
+        window.seen.unhandled = {
+          isError: e.reason instanceof Error,
+          name: e.reason && e.reason.name,
+          message: e.reason && e.reason.message,
+          samePromise: e.promise === window.p
+        };
+      });
+      window.addEventListener("rejectionhandled", function (e) {
+        window.seen.handled = {
+          samePromise: e.promise === window.p,
+          message: e.reason && e.reason.message,
+          cancelable: e.cancelable
+        };
+      });
+    </script></body></html>
+  HTML
+
+  def test_the_page_gets_the_reason_it_threw_and_the_promise
+    skip_without_hook
+    browser = Dommy::Browser.new(REJECTION_PAGE, strict: false)
+    browser.execute('window.p = Promise.reject(new TypeError("the real reason"));')
+    browser.settle
+    seen = browser.evaluate("window.seen.unhandled")
+
+    assert seen["isError"], "the reason is the Error the page threw"
+    assert_equal "TypeError", seen["name"]
+    assert_equal "the real reason", seen["message"]
+    assert seen["samePromise"], "event.promise is the promise that rejected"
+  ensure
+    browser&.dispose
+  end
+
+  def test_rejectionhandled_fires_when_a_handler_arrives_late
+    skip_without_hook
+    browser = Dommy::Browser.new(REJECTION_PAGE, strict: false)
+    browser.execute('window.p = Promise.reject(new TypeError("the real reason"));')
+    browser.settle
+    browser.execute("window.p.catch(function () {});")
+    browser.settle
+    seen = browser.evaluate("window.seen.handled")
+
+    refute_nil seen
+    assert seen["samePromise"]
+    assert_equal "the real reason", seen["message"]
+    refute seen["cancelable"], "the page is being informed, not consulted"
+  ensure
+    browser&.dispose
+  end
+
+  # A handler attached in a later task, with no checkpoint of ours in between:
+  # the report is taken back, so nothing fails.
+  def test_a_late_handler_retracts_the_report
+    skip_without_hook
+    html = <<~HTML
+      <html><body><script>
+        window.p = Promise.reject(new Error("retried"));
+        setTimeout(function () { window.p.catch(function () {}); }, 10);
+      </script></body></html>
+    HTML
+    browser = Dommy::Browser.new(html, strict: false, settle: false)
+    browser.advance_time(50)
+
+    assert_empty browser.error_log.pending,
+      "the page recovered, so the report is withdrawn"
+    refute_empty browser.js_errors, "the console still shows it happened"
+  ensure
+    browser&.dispose
+  end
+
+  def test_a_rejection_nobody_handles_still_fails
+    skip_without_hook
+    browser = Dommy::Browser.new("<html><body></body></html>", strict: true)
+
+    # `execute` drains the microtask queue, which ends the checkpoint the engine
+    # decides at, so the failure lands on the line that caused it.
+    error = assert_raises(Dommy::JsError) do
+      browser.execute('Promise.reject(new Error("nobody catches this"));')
+    end
+    assert_includes error.message, "nobody catches this"
+  ensure
+    begin
+      browser&.dispose
+    rescue Dommy::JsError
+      nil
+    end
+  end
+
+  def test_a_rejection_is_reported_once
+    skip_without_hook
+    browser = Dommy::Browser.new("<html><body></body></html>", strict: false)
+    browser.execute('Promise.reject(new Error("only once"));')
+    browser.settle
+
+    assert_equal 1, browser.js_errors.count { |e| e.message.to_s.include?("only once") },
+      "the JS hook supersedes the Ruby relay; both would report the same rejection"
+  ensure
+    browser&.dispose
+  end
+
+  def test_the_host_log_names_the_kind_of_error
+    skip_without_hook
+    browser = Dommy::Browser.new("<html><body></body></html>", strict: false)
+    browser.execute('Promise.reject(new TypeError("named"));')
+    browser.settle
+
+    assert(browser.js_errors.any? { |e| e.message.to_s.include?("TypeError: named") })
+  ensure
+    browser&.dispose
+  end
+
   # --- reportError ---
 
   def test_report_error_reaches_window_onerror_and_the_host

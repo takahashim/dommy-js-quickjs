@@ -20,7 +20,9 @@ class Dommy::Js::TestBrowserHarness < Minitest::Test
     @h.pump
     err = @h.errors.find { |e| e.message.include?("kaboom") }
     refute_nil err, "expected the swallowed rejection to be captured"
-    assert_includes err.message, "TypeError", "the host log names the kind of error"
+    # The kind travels in the class on the pre-hook relay path, and in the
+    # message once the JS hook hands over the reason itself.
+    assert_match(/TypeError/, "#{err.class}: #{err.message}")
     assert(Array(err.backtrace).any? { |line| line.include?("boom") }, "expected a JS stack frame")
   end
 
