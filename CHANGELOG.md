@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-09-24
+
+Requires `dommy >= 0.14.0, < 0.15` and `quickjs ~> 0.21.0`.
 
 ### Added
 
@@ -9,7 +11,7 @@
 
 ### Changed
 
-- Requires `dommy >= 0.13.0` (was `>= 0.10.0`), the release carrying the JS error-report API this gem's suite drives (`Window#__internal_on_unhandled_error__`, `Browser#error_log`, `Dommy::JsError`).
+- Requires `dommy >= 0.14.0, < 0.15` (was `>= 0.9.0`). 0.14.0 moved the wire tags from `Dommy::Js` to `Dommy::Bridge`, which the wasm bridge now reads, and 0.13.0 is the release carrying the JS error-report API this gem's suite drives (`Window#__internal_on_unhandled_error__`, `Browser#error_log`, `Dommy::JsError`). The upper bound is new: dommy's 0.x minors change the bridge contract, as 0.14.0 did — 0.9.0, which had none, breaks against it.
 - Requires `quickjs ~> 0.21.0` (was `~> 0.18.0`). Until both fixes are released upstream, the Gemfile pins [takahashim/quickjs.rb#feat/rejection-js-hook](https://github.com/takahashim/quickjs.rb/tree/feat/rejection-js-hook). It carries the JS rejection hook above, and sits on the checkpoint-timing fix ([hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141)) that reports an unhandled rejection at the end of the microtask checkpoint as HTML requires, rather than the moment a promise rejects. Without the latter, `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are both misreported as unhandled — correct code that a strict host then fails a test on.
 - `SourceGuard` is gone. It rewrote a `for...of` whose iterable contains a `yield` and retried, working around a QuickJS codegen bug ("stack underflow") that broke real SPA bundles. The QuickJS that 0.21 vendors compiles the construct, and the gemspec requires `~> 0.21.0`, so nothing could reach the retry — and nothing could test it either. Revert the removal if the bug ever comes back.
 - The gem's per-crossing `Timeout.timeout` is skipped by prepending to `::Quickjs`'s singleton rather than redefining `_with_timeout` outright, so the original stays reachable and the patch is visible in `ancestors`.
