@@ -7,6 +7,9 @@ require_relative "../quickjs"
 module Dommy
   module Js
     module Quickjs
+      # evaluate_async_script's callback was not called within the wait budget.
+      class ScriptTimeoutError < Error; end
+
       # Opt-in Capybara integration. Requiring this file enables JS execution on
       # Capybara::Dommy::Driver (via install_capybara! below), so execute_script /
       # evaluate_script run against the current Dommy document through a QuickJS
@@ -17,6 +20,11 @@ module Dommy
       # session and the Capybara polling loop, and wraps results as Capybara
       # nodes.
       module CapybaraDriver
+        # The in-realm slot an async script's callback reports to. Each call
+        # installs a fresh state object, so a late callback from an earlier call
+        # writes into its own, now-orphaned one.
+        ASYNC_SCRIPT_STATE = "__rbAsyncScriptState"
+
         def rack_session
           session = super
           dommy_js_attach(session)
@@ -39,24 +47,62 @@ module Dommy
           decode_for_capybara(value)
         end
 
-        # No real async loop; evaluate synchronously. Sufficient for scripts
-        # that resolve immediately (the common Capybara case).
+        # WebDriver's executeAsyncScript: the script gets a callback as its last
+        # argument, and its result is whatever that callback is called with.
+        # Virtual time is pumped until it is, for at most
+        # Capybara.default_max_wait_time of VIRTUAL time — so a timer the script
+        # waits on fires, while the budget stays deterministic.
         def evaluate_async_script(script, *args)
-          evaluate_script(script, *args)
+          host = dommy_js_host
+          host.execute_with_args(<<~JS, capybara_script_args(args))
+            var state = { settled: false, value: undefined };
+            globalThis.#{ASYNC_SCRIPT_STATE} = state;
+            var args = Array.prototype.slice.call(arguments);
+            args.push(function (value) {
+              if (state.settled) return;
+              state.settled = true;
+              state.value = value;
+            });
+            (function () {
+            #{script}
+            }).apply(this, args);
+          JS
+          await_async_script(host)
+          decode_for_capybara(host.evaluate("globalThis.#{ASYNC_SCRIPT_STATE}.value"))
         end
 
         private
 
+        def await_async_script(host)
+          budget_ms = ::Capybara.default_max_wait_time * 1000
+          pumps = (budget_ms / ::Dommy::Rack::SessionRuntime::PUMP_SLICE_MS).ceil
+          settled = "(globalThis.#{ASYNC_SCRIPT_STATE} || {}).settled === true"
+          pumps.times do
+            return if host.evaluate(settled)
+
+            host.pump
+          end
+          return if host.evaluate(settled)
+
+          raise ScriptTimeoutError,
+                "evaluate_async_script did not call its callback within #{budget_ms.round}ms of virtual time"
+        end
+
         # A Capybara node argument becomes the Dommy element it wraps (so it
-        # crosses to JS as a proxy); arrays are mapped and anything else passes
-        # through.
+        # crosses to JS as a proxy), at any depth inside arrays and hashes.
+        # Capybara::Session unwraps only top-level elements, so a nested
+        # Capybara::Node::Element is unwrapped here too.
         def capybara_script_args(args)
-          args.map do |arg|
-            case arg
-            when ::Capybara::Dommy::Node then arg.native
-            when Array then capybara_script_args(arg)
-            else arg
-            end
+          args.map { |arg| capybara_script_arg(arg) }
+        end
+
+        def capybara_script_arg(arg)
+          case arg
+          when ::Capybara::Node::Element then capybara_script_arg(arg.base)
+          when ::Capybara::Dommy::Node then arg.native
+          when Array then capybara_script_args(arg)
+          when Hash then arg.transform_values { |value| capybara_script_arg(value) }
+          else arg
           end
         end
 

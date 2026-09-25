@@ -204,6 +204,38 @@ class Dommy::Js::TestCapybaraAdapter < Minitest::Test
     assert_equal "inline-after-404", @driver.evaluate_script("window.__ran")
   end
 
+  # Script arguments: an expression form (as Capybara passes it), a node
+  # argument, and nodes nested in arrays and hashes all reach the page.
+  def test_evaluate_script_with_arguments
+    h1 = Capybara::Dommy::Node.new(@driver, @driver.document.query_selector("h1"))
+    assert_equal 3, @driver.evaluate_script("arguments[0] + arguments[1]", 1, 2)
+    assert_equal "Hello", @driver.evaluate_script("arguments[0].textContent", h1)
+    assert_equal "Hello", @driver.evaluate_script("arguments[0][0].textContent", [h1])
+    assert_equal "Hello", @driver.evaluate_script("arguments[0].node.textContent", {"node" => h1})
+    assert_equal "h1", @driver.evaluate_script("arguments[0]", h1).tag_name
+  end
+
+  def test_execute_script_with_node_argument
+    h1 = Capybara::Dommy::Node.new(@driver, @driver.document.query_selector("h1"))
+    @driver.execute_script("arguments[0].textContent = arguments[1]", h1, "Changed")
+    assert_equal "Changed", @driver.evaluate_script('document.querySelector("h1").textContent')
+  end
+
+  # evaluate_async_script: the callback is the last argument, and virtual time
+  # is pumped until the script calls it.
+  def test_evaluate_async_script_callback
+    assert_equal 42, @driver.evaluate_async_script("arguments[0](42)")
+    assert_equal 2, @driver.evaluate_async_script("arguments[1](arguments[0] + 1)", 1)
+    assert_equal "late", @driver.evaluate_async_script('var cb = arguments[0]; setTimeout(() => cb("late"), 500)')
+  end
+
+  def test_evaluate_async_script_times_out
+    error = assert_raises(Dommy::Js::Quickjs::ScriptTimeoutError) do
+      @driver.evaluate_async_script('var cb = arguments[0]; setTimeout(() => cb(1), 60000)')
+    end
+    assert_match(/virtual time/, error.message)
+  end
+
   # install_capybara! is idempotent: requiring/enabling repeatedly prepends once.
   def test_install_capybara_is_idempotent
     Dommy::Js::Quickjs.install_capybara!
