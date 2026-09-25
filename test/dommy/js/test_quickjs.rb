@@ -271,6 +271,29 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal "Products", result.text_content
   end
 
+  # An expression that THROWS a SyntaxError at run time is not a parse error:
+  # it raises once, and its side effects are not replayed as a statement body.
+  def test_evaluate_runtime_syntax_error_runs_once
+    assert_raises(::Quickjs::SyntaxError) do
+      @rt.evaluate('globalThis.runs = (globalThis.runs || 0) + 1, JSON.parse("{")')
+    end
+    assert_equal 1, @rt.evaluate("globalThis.runs")
+  end
+
+  # A trailing line comment does not turn an expression into a body.
+  def test_evaluate_expression_with_trailing_comment
+    assert_equal 3, @rt.evaluate("1 + 2 // sum")
+  end
+
+  # With arguments, the script is an expression or a body, like #evaluate.
+  def test_evaluate_with_args_expression_and_body
+    h1 = @win.document.query_selector("h1")
+    assert_equal 3, @rt.evaluate_with_args("arguments[0] + arguments[1]", [1, 2])
+    assert_equal "Products", @rt.evaluate_with_args("arguments[0].textContent;", [h1])
+    assert_equal 3, @rt.evaluate_with_args("const s = arguments[0] + arguments[1]; return s;", [1, 2])
+    assert_same h1, @rt.evaluate_with_args("return arguments[0]", [h1])
+  end
+
   # classList is a bridge object; its methods (manifest) route through __js_call__.
   def test_classlist_add
     @rt.execute('document.querySelector("h1").classList.add("active");')

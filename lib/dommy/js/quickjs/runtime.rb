@@ -129,35 +129,32 @@ module Dommy
         # Evaluate JS and return its value, with DOM nodes decoded to Dommy
         # objects (rather than the empty Hash a raw proxy becomes crossing to
         # Ruby). Accepts either an expression (`document.title`) or a statement
-        # body that uses `return` (`const x = ...; return x;`): the expression
-        # form is tried first and, on a syntax error, retried as an async
-        # function body. Syntax errors are compile-time so the failed first
-        # attempt runs nothing. The result is awaited, so a Promise resolves
-        # before returning.
+        # body that uses `return` (`const x = ...; return x;`), run as an async
+        # function body. Which one it is gets decided by compiling, not by
+        # running and retrying (see #expression?). The result is awaited, so a
+        # Promise resolves before returning.
         def evaluate(js)
           bump_dom_epoch
-          evaluate_settled("(#{js.strip.sub(/;\s*\z/, "")})")
-        rescue ::Quickjs::SyntaxError
-          evaluate_settled("(async () => {\n#{js}\n})()")
+          evaluate_settled(expression?(js) ? parenthesized(js) : "(async () => {\n#{js}\n})()")
         end
 
         # Optional Runtime API: run a script with Ruby arguments as its
         # `arguments`. DOM objects cross as JS proxies (the same wire the bridge
         # uses for any Ruby->JS value), so `arguments[0].scrollIntoView()` works.
-        # The wire payload is JSON, injected as a global and rehydrated in-realm
-        # (`__rbHost.rehydrateArgs`), then spread into the script.
+        # The wire payload is JSON spliced into the source and rehydrated
+        # in-realm (`__rbHost.rehydrateArgs`), then spread into the script.
         def execute_with_args(js, args)
-          wire = JSON.generate(@bridge.encode(Array(args)))
+          wire = encode_args(args)
           in_page_turn { @backend.eval("(function () {\n#{with_arguments_js(js, wire)}\n})();") }
         end
 
-        # Args-aware evaluate: the script body is the function body (so it can
-        # `return`), and the decoded result is awaited like #evaluate.
+        # Args-aware evaluate. Like #evaluate, the script is an expression
+        # (`arguments[0].value`, the form Capybara's evaluate_script passes) or a
+        # body that uses `return`; the decoded result is awaited.
         def evaluate_with_args(js, args)
           bump_dom_epoch
-          wire = JSON.generate(@bridge.encode(Array(args)))
-          expr = "(async function () {\n#{with_arguments_js(js, wire)}\n})()"
-          evaluate_settled(expr)
+          body = expression?(js) ? "return #{parenthesized(js)};" : js
+          evaluate_settled("(async function () {\n#{with_arguments_js(body, encode_args(args))}\n})()")
         end
 
         # Drive the document lifecycle: set `document.readyState` and fire the
@@ -371,11 +368,28 @@ module Dommy
           @backend.eval_awaited("__rbHost.tag(#{inner_expr});")
         end
 
-        # A script body wrapped so `arguments` are the injected wire payload
-        # rehydrated in-realm (DOM handles become JS proxies). The payload rides
-        # on a uniquely-named global so nested calls can't collide, and is
-        # spliced directly into the source as a JSON literal — no global cleanup
-        # to forget.
+        # Whether `js` is a single expression, found by compiling it — nothing
+        # runs. Running it and retrying as a body on SyntaxError could not tell
+        # a parse error from one the script throws (`JSON.parse("{")`), and the
+        # retry then ran the script's side effects a second time.
+        def expression?(js)
+          Backend.compile(parenthesized(js))
+          true
+        rescue ::Quickjs::SyntaxError
+          false
+        end
+
+        # `js` as a parenthesized expression, a trailing `;` dropped. The
+        # newlines keep a trailing line comment from swallowing the `)`.
+        def parenthesized(js) = "(\n#{js.strip.sub(/;\s*\z/, "")}\n)"
+
+        # Script arguments as the bridge's JSON wire payload.
+        def encode_args(args) = JSON.generate(@bridge.encode(Array(args)))
+
+        # A script body wrapped so `arguments` are the wire payload rehydrated
+        # in-realm (DOM handles become JS proxies). The payload is spliced into
+        # the source as a JSON literal and held in a function-local `var`, so
+        # nested calls can't collide and there is no global to clean up.
         def with_arguments_js(js, wire_json)
           "var __rbScriptArgs = __rbHost.rehydrateArgs(#{wire_json});\n" \
             "return (function () {\n#{js}\n}).apply(this, __rbScriptArgs);"

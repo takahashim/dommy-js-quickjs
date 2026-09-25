@@ -125,6 +125,9 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     # A primitive argument.
     assert_equal "hi:2", @session.evaluate_script('return arguments[0] + ":" + arguments[1]', "hi", 2)
 
+    # An expression, the form Capybara passes: no `return` needed.
+    assert_equal "hi:2", @session.evaluate_script('arguments[0] + ":" + arguments[1]', "hi", 2)
+
     # A DOM node argument crosses as a JS proxy: `arguments[0]` IS the element.
     node = @session.document.get_element_by_id("box")
     @session.execute_script("arguments[0].textContent = arguments[1]", node, "via arg")
