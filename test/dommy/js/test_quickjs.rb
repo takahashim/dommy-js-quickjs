@@ -41,7 +41,7 @@ class Dommy::Js::TestQuickjs < Minitest::Test
 
     counts = rt.bridge_crossing_counts
     assert_operator counts.dig("__rb_host_describe", "__total__"), :>=, 1
-    assert_operator counts.dig("__rb_host_call", "Document#querySelector"), :>=, 1
+    assert_operator counts.dig("__rb_host_call", "HTMLDocument#querySelector"), :>=, 1
     assert_operator counts.dig("__rb_host_get", "HTMLButtonElement#tagName"), :>=, 1
 
     rt.reset_bridge_crossing_counts
@@ -340,10 +340,10 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     assert_equal "DocumentFragment,Node,EventTarget", @rt.evaluate(js)
   end
 
-  # The document itself: Document -> Node -> EventTarget.
+  # The document itself: an HTML document is an HTMLDocument, as in browsers.
   def test_interface_chain_for_document
     @rt.define_host_object("window", @win)
-    assert_equal "Document,Node,EventTarget",
+    assert_equal "HTMLDocument,Document,Node,EventTarget",
       @rt.evaluate("__rbHost.interfaceOf(window.document).chain.join(\",\")")
   end
 
