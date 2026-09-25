@@ -318,7 +318,6 @@ class Dommy::Js::TestWptDomFiles < Minitest::Test
       # isn't modeled — Makiri can't clone a standalone attribute node between arenas.
       expected: ["Import an Attr node with namespace/prefix correctly."]
     },
-    "dom/nodes/DocumentType-remove.html" => { min_pass: 4, expected: [] },
     "dom/nodes/remove-unscopable.html" => { min_pass: 6, expected: [] },
 
     # --- ranges ----------------------------------------------------------
