@@ -118,6 +118,19 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     assert_equal "changed", @session.evaluate_script('document.getElementById("box").textContent')
   end
 
+  def test_execute_and_evaluate_script_pass_arguments
+    @session = session
+    @session.visit("/")
+
+    # A primitive argument.
+    assert_equal "hi:2", @session.evaluate_script('return arguments[0] + ":" + arguments[1]', "hi", 2)
+
+    # A DOM node argument crosses as a JS proxy: `arguments[0]` IS the element.
+    node = @session.document.get_element_by_id("box")
+    @session.execute_script("arguments[0].textContent = arguments[1]", node, "via arg")
+    assert_equal "via arg", @session.evaluate_script('document.getElementById("box").textContent')
+  end
+
   def test_fetch_resolves_through_the_rack_app
     @session = session
     @session.visit("/")

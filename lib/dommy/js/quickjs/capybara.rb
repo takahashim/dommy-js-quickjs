@@ -23,13 +23,20 @@ module Dommy
           session
         end
 
-        def execute_script(script, *_args)
-          dommy_js_host.execute(script)
+        def execute_script(script, *args)
+          host = dommy_js_host
+          if args.empty?
+            host.execute(script)
+          else
+            host.execute_with_args(script, capybara_script_args(args))
+          end
           nil
         end
 
-        def evaluate_script(script, *_args)
-          decode_for_capybara(dommy_js_host.evaluate(script))
+        def evaluate_script(script, *args)
+          host = dommy_js_host
+          value = args.empty? ? host.evaluate(script) : host.evaluate_with_args(script, capybara_script_args(args))
+          decode_for_capybara(value)
         end
 
         # No real async loop; evaluate synchronously. Sufficient for scripts
@@ -39,6 +46,19 @@ module Dommy
         end
 
         private
+
+        # A Capybara node argument becomes the Dommy element it wraps (so it
+        # crosses to JS as a proxy); arrays are mapped and anything else passes
+        # through.
+        def capybara_script_args(args)
+          args.map do |arg|
+            case arg
+            when ::Capybara::Dommy::Node then arg.native
+            when Array then capybara_script_args(arg)
+            else arg
+            end
+          end
+        end
 
         # Bind a SessionRuntime to the session (rebuilt when reset!/app_host
         # swaps the session). The driver's frame-aware `document` is the realm

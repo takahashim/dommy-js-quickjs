@@ -141,6 +141,25 @@ module Dommy
           evaluate_settled("(async () => {\n#{js}\n})()")
         end
 
+        # Optional Runtime API: run a script with Ruby arguments as its
+        # `arguments`. DOM objects cross as JS proxies (the same wire the bridge
+        # uses for any Ruby->JS value), so `arguments[0].scrollIntoView()` works.
+        # The wire payload is JSON, injected as a global and rehydrated in-realm
+        # (`__rbHost.rehydrateArgs`), then spread into the script.
+        def execute_with_args(js, args)
+          wire = JSON.generate(@bridge.encode(Array(args)))
+          in_page_turn { @backend.eval("(function () {\n#{with_arguments_js(js, wire)}\n})();") }
+        end
+
+        # Args-aware evaluate: the script body is the function body (so it can
+        # `return`), and the decoded result is awaited like #evaluate.
+        def evaluate_with_args(js, args)
+          bump_dom_epoch
+          wire = JSON.generate(@bridge.encode(Array(args)))
+          expr = "(async function () {\n#{with_arguments_js(js, wire)}\n})()"
+          evaluate_settled(expr)
+        end
+
         # Drive the document lifecycle: set `document.readyState` and fire the
         # milestone events (`readystatechange`, then `DOMContentLoaded` on
         # "interactive" / `load` on "complete"), then drain microtasks so the
@@ -350,6 +369,16 @@ module Dommy
 
         def eval_tagged(inner_expr)
           @backend.eval_awaited("__rbHost.tag(#{inner_expr});")
+        end
+
+        # A script body wrapped so `arguments` are the injected wire payload
+        # rehydrated in-realm (DOM handles become JS proxies). The payload rides
+        # on a uniquely-named global so nested calls can't collide, and is
+        # spliced directly into the source as a JSON literal — no global cleanup
+        # to forget.
+        def with_arguments_js(js, wire_json)
+          "var __rbScriptArgs = __rbHost.rehydrateArgs(#{wire_json});\n" \
+            "return (function () {\n#{js}\n}).apply(this, __rbScriptArgs);"
         end
       end
     end
