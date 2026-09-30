@@ -10,6 +10,14 @@ gem "rake", "~> 13.0"
 
 gem "minitest", "~> 5.16"
 
+# `rake capybara:compliance` (spec/capybara_compliance_spec.rb) runs Capybara's
+# driver compliance suite — RSpec and its bundled Sinatra TestApp — against
+# capybara-dommy with JavaScript on. Test-only: the gem itself needs none of
+# these.
+gem "rspec"
+gem "sinatra"
+gem "launchy"
+
 # TEMPORARY: the released quickjs (0.21.0) reports an unhandled rejection the
 # moment a promise rejects, rather than at the end of the microtask checkpoint
 # as HTML requires. Correct code is misreported — `Promise.reject(x).catch(...)`
