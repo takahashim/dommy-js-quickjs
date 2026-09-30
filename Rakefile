@@ -26,6 +26,16 @@ namespace :test do
   end
 end
 
+namespace :capybara do
+  desc "Run Capybara's driver compliance suite against capybara-dommy with JavaScript on"
+  task :compliance do
+    # Its own process: requiring the JS adapter turns JavaScript on for every
+    # Capybara::Dommy::Driver in it. Not part of `test` — the suite still fails
+    # in places.
+    ruby "-S", "rspec", File.expand_path("spec/capybara_compliance_spec.rb", __dir__)
+  end
+end
+
 task default: %i[test test_oom]
 
 namespace :wpt do

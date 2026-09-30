@@ -14,11 +14,13 @@ class Dommy::Js::TestWptDomParsingFiles < Minitest::Test
   wpt_files(
     "domparsing/XMLSerializer-serializeToString.html" => {
       min_pass: 27,
-      # XLink-prefix preservation and the explicit default-namespace
-      # undeclaration (xmlns="") are remaining namespace-algorithm edges.
+      # Two cases contradict others in the file; Dommy writes what Chrome,
+      # WebKit and Firefox all write (an agreeing xmlns="" is kept, an
+      # attribute keeps its own unbound prefix), and fails these two as every
+      # browser does.
       expected: [
-        "Check if no special handling for XLink namespace unlike HTML serializer.",
-        "Check if a prefix bound to an empty namespace URI (\"no namespace\") serialize"
+        "Check if redundant xmlns=\"...\" is dropped.",
+        "Check if the prefix of an attribute is NOT preserved in a case where neither its prefix nor its namespace URI is not already used."
       ]
     },
     "domparsing/DOMParser-parseFromString-html.html" => {
