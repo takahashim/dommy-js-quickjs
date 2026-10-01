@@ -22,15 +22,10 @@ Gem::Specification.new do |spec|
   spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  # Specify which files should be added to the gem when it is released.
-  # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
-  gemspec = File.basename(__FILE__)
-  spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
-    ls.readlines("\x0", chomp: true).reject do |f|
-      (f == gemspec) ||
-        f.start_with?(*%w[bin/ Gemfile .gitignore test/])
-    end
-  end
+  # What a user needs, listed rather than everything git tracks minus a few, so
+  # a new script, spec or CI file stays out of the package without a thought.
+  spec.files = Dir.glob(%w[lib/**/* sig/**/* README.md CHANGELOG.md LICENSE.txt], base: __dir__)
+                  .select { |f| File.file?(File.join(__dir__, f)) }
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
