@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# The unlistened-dispatch fast path (docs/event-dispatch-fastpath.md): a
+# The unlistened-dispatch fast path: a
 # namespaced (colon) event type nobody listens for dispatches in one crossing
 # with no cache invalidation. These tests pin the correctness edges: the fast
 # path must never swallow a real listener (JS- or Ruby-registered), and the

@@ -2,7 +2,7 @@
 
 Runs Dommy's vendored WPT corpus (`test/fixtures/wpt`, the same 245-file manifest
 `WptRunner` uses) under **jsdom** and **happy-dom**, and compares fully-green /
-runnable counts with Dommy. Backs `docs/dom-library-comparison.md`.
+runnable counts with Dommy.
 
 ```
 cd script/wpt-compare

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0 — 2026-09-24
+## 0.10.0 — 2026-10-01
 
 Requires `dommy >= 0.14.0, < 0.15` and `quickjs ~> 0.21.0`.
 
@@ -24,6 +24,7 @@ Requires `dommy >= 0.14.0, < 0.15` and `quickjs ~> 0.21.0`.
 - `Runtime#load_module` and `Backend#import_module` are gone, unused: an inline `<script type="module">` reaches the engine through `load_module_url`.
 - `install_wasm_memory_shim` installs the same WebAssembly stub as `install_browser_globals` rather than a second, near-identical one.
 - The vendored WPT tree is pinned to a single upstream revision (`test/fixtures/wpt/UPSTREAM_REVISION`) and refreshed with `script/vendor_wpt.sh`, rather than growing file by file from whatever upstream was that day. Refreshing to `2f7c700` moved 24 files; `url-constructor.any.js` is green again, since upstream now expects an undecodable A-label like `https://xn--/` to parse.
+- The gem ships `lib/`, `sig/`, the README, the changelog and the license, and nothing else. It used to take everything git tracks bar a few paths, which by now meant the maintainers' design notes, the WPT comparison scripts, the Capybara compliance spec and the CI workflow.
 
 ### Fixed
 
