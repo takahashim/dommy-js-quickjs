@@ -113,8 +113,9 @@ The pieces it relies on are public Runtime API:
   The released quickjs (0.21.0) reports a rejection before a handler attached in
   the same microtask checkpoint can catch it, so `.catch` and `try { await … }
   catch` would look unhandled; on such an engine nothing is reported here (a
-  warning says so once), and a strict `Dommy::Browser` does not fail on
-  rejections. A quickjs with
+  warning says so once), so a strict `Dommy::Browser` does not fail on
+  rejections and the page's `unhandledrejection` event (and
+  `window.onunhandledrejection`) never fires. A quickjs with
   [hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141) reports them.
 - `Runtime#on_log { |log| }` — observe `console.*` (`log.severity` / `log.to_s`).
 

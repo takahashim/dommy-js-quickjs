@@ -35,9 +35,11 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  # NOTE: the tests need quickjs's HTML-timed unhandled-rejection reporting,
-  # which is unreleased; the Gemfile pins the fork branch of hmsk/quickjs.rb#141
-  # until it ships. 0.21.0 is the floor everything else here works against.
+  # NOTE: 0.21.0 is the floor everything here works against. It reports a
+  # promise rejection before a handler can attach, so on it unhandled rejections
+  # are not reported at all (Runtime#on_unhandled_rejection); the HTML-timed fix
+  # (hmsk/quickjs.rb#141) is merged upstream but unreleased. The Gemfile pins a
+  # fork carrying it, and gemfiles/quickjs-released.gemfile tests the release.
   spec.add_dependency "quickjs", "~> 0.21.0"
   spec.add_dependency "dommy", ">= 0.14.0", "< 0.15"
 

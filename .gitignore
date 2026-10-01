@@ -9,3 +9,4 @@
 /Gemfile.lock
 # Capybara compliance suite (rake capybara:compliance) output
 /save_path_tmp/
+/gemfiles/*.lock
