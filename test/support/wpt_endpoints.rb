@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "cgi"
 require "uri"
 
 module Dommy
@@ -38,7 +37,7 @@ module Dommy
 
         uri.query = (params - [pipe_param]).join("&")
         uri.query = nil if uri.query.empty?
-        [CGI.unescape(pipe_param.delete_prefix("pipe=")), uri.to_s]
+        [form_decode(pipe_param.delete_prefix("pipe=")), uri.to_s]
       rescue URI::InvalidURIError
         [nil, url]
       end
@@ -241,17 +240,25 @@ module Dommy
         )
       end
 
-      # First value per key, percent-decoded to raw bytes (ASCII-8BIT) so a
-      # `content=` carrying non-UTF-8 response bytes survives intact.
+      # First value per key, form-decoded; a `content=` carrying non-UTF-8
+      # response bytes keeps them, unscrubbed.
       def query(uri)
         out = {}
         (uri.query || "").split("&").each do |pair|
           k, v = pair.split("=", 2)
           next if k.nil? || out.key?(k)
 
-          out[k] = CGI.unescape(v.to_s)
+          out[k] = form_decode(v.to_s)
         end
         out
+      end
+
+      # application/x-www-form-urlencoded decoding as dommy's URL does it ("+"
+      # is a space, then percent-decode), without CGI: Ruby 4.0 dropped it, and
+      # no one require of it works quietly from 3.2 to 4.0. The bytes are kept
+      # and labelled UTF-8, as CGI.unescape left them.
+      def form_decode(str)
+        Dommy::Internal::UrlParser.percent_decode(str.tr("+", " ")).force_encoding(Encoding::UTF_8)
       end
     end
   end
