@@ -31,8 +31,13 @@ gem "launchy"
 # has no upstream PR yet. Drop the override (and relax the gemspec) once both
 # are released. The ref must stay reachable from a branch or tag of the fork:
 # CI fetches it, and a commit a rewritten branch left behind cannot be fetched.
-gem "quickjs", github: "takahashim/quickjs.rb", ref: "1415c0f",
-  submodules: true # the QuickJS C sources are a submodule
+#
+# gemfiles/quickjs-released.gemfile sets @released_quickjs to skip the pin and
+# test against the released gem instead.
+unless @released_quickjs
+  gem "quickjs", github: "takahashim/quickjs.rb", ref: "e6becef",
+    submodules: true # the QuickJS C sources are a submodule
+end
 
 # In the dommy monorepo, use the working trees next door; a standalone clone
 # (CI included) falls back to dommy's main on GitHub. Both sides carry the same set,

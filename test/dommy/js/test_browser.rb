@@ -214,6 +214,7 @@ class Dommy::Js::TestBrowser < Minitest::Test
   end
 
   def test_allow_js_errors_suppresses_strict_failure
+    skip_on_premature_rejection_reports
     html = "<html><body></body></html>"
     Dommy::Browser.open(html, strict: true) do |b|
       b.allow_js_errors do

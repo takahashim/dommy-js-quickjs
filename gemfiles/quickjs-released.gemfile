@@ -1,0 +1,8 @@
+# frozen_string_literal: true
+
+# The main Gemfile with the released quickjs in place of the fork pin — what a
+# user installing this gem from RubyGems runs on. CI runs the suite on both.
+#
+#   BUNDLE_GEMFILE=gemfiles/quickjs-released.gemfile bundle exec rake
+@released_quickjs = true
+eval_gemfile File.expand_path("../Gemfile", __dir__)
