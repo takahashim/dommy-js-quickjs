@@ -35,7 +35,7 @@ gem "launchy"
 # gemfiles/quickjs-released.gemfile sets @released_quickjs to skip the pin and
 # test against the released gem instead.
 unless @released_quickjs
-  gem "quickjs", github: "takahashim/quickjs.rb", ref: "1415c0f",
+  gem "quickjs", github: "takahashim/quickjs.rb", ref: "e6becef",
     submodules: true # the QuickJS C sources are a submodule
 end
 
