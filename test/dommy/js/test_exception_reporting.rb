@@ -208,6 +208,7 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
   # with it `.message` / `.stack`) does not survive the crossing. Same missing
   # signal that keeps `rejectionhandled` unimplemented.
   def test_an_unhandled_rejection_fires_the_unhandledrejection_event
+    skip_on_premature_rejection_reports
     html = <<~HTML
       <html><body><script>
         window.__seen = [];

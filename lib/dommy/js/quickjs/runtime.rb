@@ -195,16 +195,35 @@ module Dommy
         # Surface otherwise-swallowed JS promise rejections (see Backend).
         # Goes quiet once the JS hook is installed: both would fire for the same
         # rejection, and the hook carries strictly more.
+        #
+        # Goes quiet, too, on an engine that reports a rejection before a
+        # handler could attach (Backend.premature_rejection_reports?): there
+        # every `.catch` and `try { await … } catch` would surface as an
+        # unhandled rejection and fail a strict host on correct code. Reporting
+        # none is the lesser loss — a rejection the page truly leaves unhandled
+        # goes unreported until the engine is fixed.
         def on_unhandled_rejection(&block)
           # Decided when a rejection actually arrives, not now: a host registers
           # this before #install_window, which is where the hook goes in.
           relay = lambda do |error|
             next if js_rejection_hook?
+            next self.class.warn_premature_rejection_reports if Backend.premature_rejection_reports?
 
             block.call(@track_rejections ? @errors.enrich_rejection(error) : error)
           end
           @backend.on_unhandled_rejection(&relay)
           self
+        end
+
+        # Said once per process, on the first rejection left unreported.
+        def self.warn_premature_rejection_reports
+          return if @warned_premature_rejection_reports
+
+          @warned_premature_rejection_reports = true
+          warn "dommy-js-quickjs: this quickjs (#{::Quickjs::VERSION}) reports a promise rejection before " \
+               "a handler can attach, so unhandled rejections are not reported. A quickjs with " \
+               "hmsk/quickjs.rb#141 (unhandled-rejection timing) reports them."
+          nil
         end
 
         # Whether rejections arrive through the JS hook. A host that also relays

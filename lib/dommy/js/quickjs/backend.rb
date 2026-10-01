@@ -45,6 +45,40 @@ module Dommy
       # the top-level tag); either way it maps to Dommy::Bridge::UNDEFINED. No
       # normalization is needed here.
       class Backend
+        # Whether this quickjs reports a promise rejection the moment it
+        # happens, before a handler attached later in the same microtask
+        # checkpoint gets the chance — the released quickjs (0.21.0) does, so
+        # `Promise.reject(x).catch(f)` and `try { await p } catch {}` both
+        # come out as unhandled. HTML reports at the end of the checkpoint
+        # (hmsk/quickjs.rb#141, merged upstream but unreleased).
+        #
+        # Decided by behavior, not by version — a git checkout of the fixed
+        # engine still says 0.21.0 — on a throwaway VM, once per process.
+        def self.premature_rejection_reports?
+          return @premature_rejection_reports if defined?(@premature_rejection_reports)
+
+          @premature_rejection_reports = probe_premature_rejection_reports
+        end
+
+        def self.probe_premature_rejection_reports
+          vm = ::Quickjs::VM.new
+          reported = false
+          vm.on_unhandled_rejection { |_error| reported = true }
+          vm.eval_code(<<~JS, async: false)
+            Promise.reject(1).catch(function () {});
+            (async function () { try { await Promise.reject(2); } catch (e) {} })();
+            0
+          JS
+          vm.drain_jobs!
+          reported
+        rescue ::StandardError
+          # A probe that cannot run says nothing either way; keep reporting.
+          false
+        ensure
+          vm&.dispose!
+        end
+        private_class_method :probe_premature_rejection_reports
+
         # Timeout and memory ceiling both differ from the gem's defaults, for
         # reasons Config documents.
         def initialize(**vm_opts)

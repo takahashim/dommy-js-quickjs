@@ -110,6 +110,12 @@ The pieces it relies on are public Runtime API:
 - `Runtime#on_unhandled_rejection { |err| }` — surface promise rejections that
   reach the microtask queue with no handler. Frameworks swallow these; `err.backtrace`
   carries the JS stack, which is the difference between blind and one-shot debugging.
+  The released quickjs (0.21.0) reports a rejection before a handler attached in
+  the same microtask checkpoint can catch it, so `.catch` and `try { await … }
+  catch` would look unhandled; on such an engine nothing is reported here (a
+  warning says so once), and a strict `Dommy::Browser` does not fail on
+  rejections. A quickjs with
+  [hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141) reports them.
 - `Runtime#on_log { |log| }` — observe `console.*` (`log.severity` / `log.to_s`).
 
 ### Capybara
