@@ -167,12 +167,7 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     },
     "html/dom/aria-attribute-reflection.html" => { min_pass: 41, expected: [] },
     "html/dom/aria-element-reflection.html" => { min_pass: 27, expected: [] },
-    "html/dom/aria-element-reflection-disconnected.html" => {
-      min_pass: 1,
-      # Element-reference reflection across disconnection (FrozenArray caching)
-      # is not modeled.
-      expected: ["Element references should stay valid when content is disconnected (element array)"]
-    },
+    "html/dom/aria-element-reflection-disconnected.html" => { min_pass: 2, expected: [] },
     "html/dom/historical.html" => {
       min_pass: 10,
       # Obsolete <applet>: Dommy still surfaces it as a normal element rather

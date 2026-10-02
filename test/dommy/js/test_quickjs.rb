@@ -438,6 +438,26 @@ class Dommy::Js::TestQuickjs < Minitest::Test
     JS
   end
 
+  # ariaLabelledByElements is a FrozenArray<Element>?: a frozen Array that stays
+  # the same object across reads while it holds the same elements, and is
+  # replaced (leaving the old one intact) once they change.
+  def test_aria_element_list_is_a_frozen_array_with_identity
+    result = @rt.evaluate(<<~JS)
+      (() => {
+        const btn = document.querySelector(".primary"), h1 = document.querySelector("h1");
+        const div = document.getElementById("root");
+        btn.ariaLabelledByElements = [h1];
+        const a = btn.ariaLabelledByElements, b = btn.ariaLabelledByElements;
+        btn.ariaLabelledByElements = [h1, div];
+        const c = btn.ariaLabelledByElements;
+        btn.ariaLabelledByElements = null;
+        return [Array.isArray(a), Object.isFrozen(a), a === b, a !== c,
+                a.length, a[0] === h1, c.length, btn.ariaLabelledByElements];
+      })()
+    JS
+    assert_equal [true, true, true, true, 1, true, 2, nil], result
+  end
+
   # Bridge sub-objects get their WebIDL interface names too.
   def test_classlist_interface_name
     assert_equal "DOMTokenList",
