@@ -18,24 +18,20 @@ gem "rspec"
 gem "sinatra"
 gem "launchy"
 
-# TEMPORARY: the released quickjs (0.21.0) reports an unhandled rejection the
-# moment a promise rejects, rather than at the end of the microtask checkpoint
-# as HTML requires. Correct code is misreported — `Promise.reject(x).catch(...)`
-# and `try { await rejecting() } catch {}` both attach their handler later in
-# the same checkpoint — which a strict host then fails a test on. HTML's timing
-# is merged upstream (https://github.com/hmsk/quickjs.rb/pull/141) but not yet
-# released. The pin is the fork's `feat/rejection-js-hook`, upstream's main plus
-# one commit that hands rejections to a JS function with the promise and reason
+# TEMPORARY: the pin is a tag on the fork, the released quickjs 0.22.0 plus one
+# commit that hands rejections to a JS function with the promise and reason
 # intact — without it the window's `event.reason` / `event.promise` /
 # `rejectionhandled` have nothing to report and their tests skip. That commit
-# has no upstream PR yet. Drop the override (and relax the gemspec) once both
-# are released. The ref must stay reachable from a branch or tag of the fork:
-# CI fetches it, and a commit a rewritten branch left behind cannot be fetched.
+# has no upstream PR yet. Drop the override once it is released.
+#
+# The fork's `feat/rejection-js-hook` is rebased onto each upstream release and
+# force-pushed; every rebase gets a tag `v<upstream>-rejection-hook.<n>`, and
+# a tag is never moved, so the ref an older commit pins can still be fetched.
 #
 # gemfiles/quickjs-released.gemfile sets @released_quickjs to skip the pin and
 # test against the released gem instead.
 unless @released_quickjs
-  gem "quickjs", github: "takahashim/quickjs.rb", ref: "e6becef",
+  gem "quickjs", github: "takahashim/quickjs.rb", tag: "v0.22.0-rejection-hook.1",
     submodules: true # the QuickJS C sources are a submodule
 end
 

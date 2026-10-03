@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Requires `quickjs ~> 0.22.0`.
+
+### Changed
+
+- Requires `quickjs ~> 0.22.0` (was `~> 0.21.0`). 0.22.0 releases [hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141): an unhandled rejection is reported at the end of the microtask checkpoint, as HTML requires, so `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are no longer misreported. On a RubyGems install, `on_unhandled_rejection` reports again, a strict `Dommy::Browser` fails on a rejection the page leaves unhandled, and the page's `unhandledrejection` event fires. The Gemfile pins the fork by tag rather than by commit: [`v0.22.0-rejection-hook.1`](https://github.com/takahashim/quickjs.rb/tree/v0.22.0-rejection-hook.1), 0.22.0 plus the still-unreleased JS rejection hook. The fork's `feat/rejection-js-hook` is rebased onto each upstream release and tagged anew, and a tag is never moved.
+
+### Removed
+
+- The 0.21.0 workaround is gone: `Backend.premature_rejection_reports?`, its once-per-process probe, and the warning `on_unhandled_rejection` gave in place of reporting. No quickjs the gemspec allows behaves that way.
+
 ## 0.10.0 — 2026-10-01
 
 Requires `dommy >= 0.14.0, < 0.15` and `quickjs ~> 0.21.0`.

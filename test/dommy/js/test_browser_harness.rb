@@ -16,7 +16,6 @@ class Dommy::Js::TestBrowserHarness < Minitest::Test
 
   # A rejection with no .catch is captured, with the JS stack in #backtrace.
   def test_captures_swallowed_rejection_with_backtrace
-    skip_on_premature_rejection_reports
     @h.execute("function boom() { Promise.reject(new TypeError('kaboom')); } boom();")
     @h.pump
     err = @h.errors.find { |e| e.message.include?("kaboom") }
