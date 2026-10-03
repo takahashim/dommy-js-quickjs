@@ -112,6 +112,35 @@ The pieces it relies on are public Runtime API:
   carries the JS stack, which is the difference between blind and one-shot debugging.
 - `Runtime#on_log { |log| }` — observe `console.*` (`log.severity` / `log.to_s`).
 
+### Preloading ES modules
+
+A module the loader hands over as source is parsed again by every Runtime that
+imports it. Register it once per process and later Runtimes read it in as
+bytecode instead:
+
+```ruby
+Dommy::Js::Quickjs::Runtime.register_module("https://example.test/vendor/turbo.js", source: turbo_js)
+
+rt = Dommy::Js::Quickjs::Runtime.new(preload_modules: ["https://example.test/vendor/turbo.js"])
+rt.module_loader = ->(specifier, _importer) {
+  {as: "https://example.test/vendor/turbo.js"} if specifier == "@hotwired/turbo"
+}
+```
+
+- The name is the module's canonical name: the VM keys its module map by it,
+  and the module's relative imports resolve against it. Register a page's
+  module under its resolved URL.
+- `source:` may be a Proc returning the source; it is read when a Runtime first
+  preloads the module, and the bytecode is shared from then on. Each Runtime
+  still gets its own instance, with its own module-level state.
+- A preloaded module is found before the loader is asked for its name. A loader
+  that returns `{as: name}` for another specifier (an importmap entry, say)
+  lands on it too.
+- A preloaded module's own imports are not preloaded; register each one you
+  want cached. Naming a module that is not registered raises `ArgumentError`.
+- Preloading bypasses the loader for that name, so do not preload a module the
+  loader would refuse to some importers.
+
 ### Capybara
 
 Requiring the adapter enables `execute_script` / `evaluate_script` on

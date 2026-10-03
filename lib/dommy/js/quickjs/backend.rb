@@ -46,7 +46,8 @@ module Dommy
       # normalization is needed here.
       class Backend
         # Timeout and memory ceiling both differ from the gem's defaults, for
-        # reasons Config documents.
+        # reasons Config documents. Every other option goes to the VM as is,
+        # `preload_modules:` among them (see Runtime#initialize).
         def initialize(**vm_opts)
           vm_opts = {timeout_msec: Config.timeout_msec, memory_limit: Config.memory_limit}.merge(vm_opts)
           @vm = ::Quickjs::VM.new(**vm_opts)
@@ -80,6 +81,14 @@ module Dommy
           ::Quickjs.compile(source, filename: filename)
         end
 
+        # Register an ES module process-wide under its canonical name: compiled
+        # to bytecode once, on the first VM that preloads it, and read into each
+        # VM that names it in `preload_modules:`. `source:` is a String or a Proc
+        # returning one.
+        def self.register_module(name, source:)
+          ::Quickjs.register_module(name, source: source)
+        end
+
         # Process-global cache for the engine-internal runtime bundles run via
         # #run_bundle (host_runtime.js, observable_runtime.js). Kept separate
         # from ScriptCache (user-facing external scripts) so the two concerns
@@ -109,8 +118,8 @@ module Dommy
         def eval_awaited(js) = guarded { @vm.eval_code(js, async: true) }
 
         # Install the ESM module resolver: a callable `(specifier, importer) ->
-        # source String | { code:, as: } | nil` the engine consults for every
-        # static/dynamic `import`. nil clears it (engine default loader).
+        # source String | { code:, as: } | { as: } | nil` the engine consults for
+        # every static/dynamic `import`. nil clears it (engine default loader).
         def module_loader=(callable)
           @vm.module_loader = callable
         end
