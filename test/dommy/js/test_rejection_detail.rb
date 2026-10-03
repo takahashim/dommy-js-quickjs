@@ -39,7 +39,6 @@ class Dommy::Js::TestRejectionDetail < Minitest::Test
 
   def test_rich_detail_is_surfaced_when_enabled
     skip_when_hooked
-    skip_on_premature_rejection_reports
     errors = run_with("1")
 
     assert errors.any? { |m| m.include?("BOOM") && m.include?("a real detail") && m.include?("extensions") },
@@ -48,7 +47,6 @@ class Dommy::Js::TestRejectionDetail < Minitest::Test
 
   def test_opaque_by_default
     skip_when_hooked
-    skip_on_premature_rejection_reports
     errors = run_with("")
 
     assert_includes errors, "[object Object]", "default: no tracker, the engine's opaque report"

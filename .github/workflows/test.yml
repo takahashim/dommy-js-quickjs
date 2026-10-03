@@ -17,7 +17,7 @@ jobs:
         gemfile: [Gemfile]
         include:
           # The Gemfile pins a quickjs fork; this runs what a RubyGems install
-          # gets, where Backend.premature_rejection_reports? is true. A gemfile
+          # gets, which has no JS rejection hook. A gemfile
           # unlike the matrix's makes this a job of its own rather than
           # changing the 4.0 one.
           - ruby: "4.0"
