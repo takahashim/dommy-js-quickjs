@@ -21,8 +21,23 @@ module Dommy
       # What stays here is the port itself: script evaluation, and the wiring
       # that decides which collaborator answers a host's call.
       class Runtime
-        def initialize(**vm_opts)
-          @backend = Backend.new(**vm_opts)
+        # Register an ES module process-wide, so a later Runtime can preload it
+        # as bytecode instead of parsing its source again. `name` is the
+        # module's canonical name — the one the VM's module map keys it by and
+        # its relative imports resolve against — so a page module is best
+        # registered under its resolved URL. `source:` is a String or a Proc
+        # returning one (read only when a Runtime first preloads it).
+        def self.register_module(name, source:)
+          Backend.register_module(name, source: source)
+        end
+
+        # `preload_modules:` names registered modules (see .register_module) to
+        # read into this Runtime's VM as it is made. A preloaded module is found
+        # before the module loader is asked for its name, and a loader that
+        # returns `{as: name}` for another specifier lands on it too. A name not
+        # registered raises ArgumentError. Other options go to the VM.
+        def initialize(preload_modules: [], **vm_opts)
+          @backend = Backend.new(preload_modules: preload_modules, **vm_opts)
           @bridge = Dommy::Js::HostBridge.new(@backend)
           @environment = BrowserEnvironment.new(@backend)
           @errors = ErrorTranslator.new(@backend, @bridge)
@@ -113,7 +128,9 @@ module Dommy
         end
 
         # Install the ESM module resolver (see Backend#module_loader=). A
-        # callable `(specifier, importer) -> source | {code:, as:} | nil`.
+        # callable `(specifier, importer) -> source | {code:, as:} | {as:} | nil`;
+        # `{as: name}` with no code redirects to a module the VM already has,
+        # such as one in `preload_modules:`.
         def module_loader=(callable)
           @backend.module_loader = callable
         end
