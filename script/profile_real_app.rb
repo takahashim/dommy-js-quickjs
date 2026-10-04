@@ -48,7 +48,7 @@ def phase(harness, label)
   raise "JS errors in #{label}: #{harness.error_report}" unless harness.errors.empty?
 end
 
-puts "ROWS=#{ROWS} backend=#{Dommy::Backend.current.name.split('::').last} profile=#{ENV['DOMMY_JS_BRIDGE_PROFILE']}"
+puts "ROWS=#{ROWS} profile=#{ENV['DOMMY_JS_BRIDGE_PROFILE']}"
 
 # ---------------- React: list render + state-driven re-render ----------------
 if File.exist?(REACT) && File.exist?(REACT_DOM)
