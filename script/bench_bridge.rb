@@ -16,8 +16,6 @@ require "dommy/js/quickjs"
 require "dommy"
 require_relative "../test/support/browser_harness"
 
-Dommy::Backend.use(ENV["DOMMY_BACKEND"].to_sym) if ENV["DOMMY_BACKEND"]
-
 N = Integer(ENV.fetch("N", 2000))
 
 def realtime
@@ -39,7 +37,7 @@ h = Dommy::Js::BrowserHarness.new(<<~HTML)
   </body></html>
 HTML
 
-puts "N=#{N}  backend=#{Dommy::Backend.current.name.split('::').last}"
+puts "N=#{N}"
 puts "--- JS -> Ruby crossings (what frameworks pay) ---"
 
 h.evaluate("globalThis.__obj = {x: 1}; globalThis.__el = document.getElementById('root'); 0")
