@@ -2,16 +2,18 @@
 
 ## Unreleased
 
-Requires `quickjs ~> 0.22.0`.
+Requires `dommy >= 0.15.0, < 0.16` and `quickjs ~> 0.22.0`.
 
 ### Added
 
-- ES modules can be preloaded as bytecode. `Runtime.register_module(name, source:)` registers a module once per process (wrapping `Quickjs.register_module`), and `Runtime.new(preload_modules: [name, …])` reads registered modules into the new VM, so a later page loads them without parsing their source again. A preloaded module is found before the module loader is asked for its name, and a loader that returns `{as: name}` for another specifier lands on it too.
+- ES modules can be preloaded as bytecode. `Runtime.register_module(name, source:)` registers a module once per process (wrapping `Quickjs.register_module`), and `Runtime.new(preload_modules: [name, …])` reads registered modules into the new VM, so a later page loads them without parsing their source again. A preloaded module is found before the module loader is asked for its name, and a loader that returns `{as: name}` for another specifier lands on it too. dommy's `Dommy::Js::ModulePreload` drives both: with it enabled, a page that imports Turbo as an ES module boots in about 11 ms instead of 24 ms from the third page on.
 
 ### Changed
 
-- Requires `dommy >= 0.15.0, < 0.16`.
-- Requires `quickjs ~> 0.22.0` (was `~> 0.21.0`). 0.22.0 releases [hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141): an unhandled rejection is reported at the end of the microtask checkpoint, as HTML requires, so `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are no longer misreported. On a RubyGems install, `on_unhandled_rejection` reports again, a strict `Dommy::Browser` fails on a rejection the page leaves unhandled, and the page's `unhandledrejection` event fires. The Gemfile pins the fork by tag rather than by commit: [`v0.22.0-rejection-hook.1`](https://github.com/takahashim/quickjs.rb/tree/v0.22.0-rejection-hook.1), 0.22.0 plus the still-unreleased JS rejection hook. The fork's `feat/rejection-js-hook` is rebased onto each upstream release and tagged anew, and a tag is never moved.
+- Requires `dommy >= 0.15.0, < 0.16` (was `>= 0.14.0, < 0.15`), the release whose `ModulePreload` uses the API above and whose behavior the suite checks.
+- Requires `quickjs ~> 0.22.0` (was `~> 0.21.0`). 0.22.0 releases [hmsk/quickjs.rb#141](https://github.com/hmsk/quickjs.rb/pull/141): an unhandled rejection is reported at the end of the microtask checkpoint, as HTML requires, so `Promise.reject(x).catch(...)` and `try { await rejecting() } catch {}` are no longer misreported. On a RubyGems install, `on_unhandled_rejection` reports again, a strict `Dommy::Browser` fails on a rejection the page leaves unhandled, and the page's `unhandledrejection` event fires. `event.reason` and `event.promise` are still not the page's own values there, and `rejectionhandled` does not fire: those need the JS rejection hook, which no quickjs release has yet.
+- The development Gemfile pins the quickjs fork that carries the hook by tag ([`v0.22.0-rejection-hook.1`](https://github.com/takahashim/quickjs.rb/tree/v0.22.0-rejection-hook.1)) rather than by commit, so the fork's branch can be rebased onto each upstream release without stranding the ref an older commit pins.
+- The suite no longer takes `DOMMY_BACKEND`: dommy 0.15 has Makiri as its only backend.
 
 ### Removed
 
