@@ -35,7 +35,7 @@ Gem::Specification.new do |spec|
   # The JS rejection hook is still unreleased; the Gemfile pins a fork carrying
   # it, and gemfiles/quickjs-released.gemfile tests the release.
   spec.add_dependency "quickjs", "~> 0.22.0"
-  spec.add_dependency "dommy", ">= 0.14.0", "< 0.15"
+  spec.add_dependency "dommy", ">= 0.15.0", "< 0.16"
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html
