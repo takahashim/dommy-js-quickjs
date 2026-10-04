@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 — 2026-10-04
 
 Requires `dommy >= 0.15.0, < 0.16` and `quickjs ~> 0.22.0`.
 
