@@ -119,24 +119,32 @@ class Dommy::Js::TestBrowser < Minitest::Test
   end
 
   # A blank <iframe> (no src or src="about:blank") inserted into the DOM gets a
-  # real, complete nested document and fires `load` asynchronously (handler
-  # commonly attached after appendChild), like a real browser. FingerprintJS's
-  # withIframe (its font sources) appends to `iframe.contentWindow.document.body`
-  # and polls its readyState — a never-firing load + null contentWindow hung
-  # note.com's tracking plugin and its whole Nuxt hydration.
+  # real, complete nested document and fires `load` — synchronously, during
+  # the insertion: HTML 4.8.5 "process the iframe attributes" with
+  # initialInsertion true, "If url matches about:blank and initialInsertion is
+  # true, then run the iframe load event steps given element" (no task is
+  # queued, unlike every other navigation of the frame). So a handler must be
+  # attached before appendChild; one attached after it never sees this load.
+  # FingerprintJS's withIframe (its font sources) appends to
+  # `iframe.contentWindow.document.body` and polls its readyState — a
+  # never-firing load + null contentWindow hung note.com's tracking plugin and
+  # its whole Nuxt hydration.
   def test_blank_iframe_fires_load_and_has_a_usable_content_document
     html = <<~HTML
       <html><body><script>
-        window.__loaded = false;
+        window.__events = [];
         var f = document.createElement("iframe");
         f.src = "about:blank";
-        document.body.appendChild(f);          // inserted first
-        f.onload = function () { window.__loaded = true; }; // handler after
+        f.onload = function () { window.__events.push("load"); };  // handler first
+        document.body.appendChild(f);
+        window.__events.push("appended");
+        f.addEventListener("load", function () { window.__events.push("late load"); });
       </script></body></html>
     HTML
     Dommy::Browser.open(html, url: "http://x.test/") do |b|
       f = 'document.querySelector("iframe")'
-      assert_equal true, b.evaluate("window.__loaded"), "blank iframe fired load"
+      assert_equal "load,appended", b.evaluate('window.__events.join(",")'),
+        "blank iframe fired load once, during appendChild"
       assert_equal true, b.evaluate("!!#{f}.contentWindow"), "contentWindow is a real window (not null)"
       assert_equal "complete", b.evaluate("#{f}.contentWindow.document.readyState")
       # FingerprintJS-style: append + measure inside the iframe document
