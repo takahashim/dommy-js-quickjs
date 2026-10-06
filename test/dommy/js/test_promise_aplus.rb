@@ -118,4 +118,26 @@ class Dommy::Js::TestPromiseAplus < Minitest::Test
         .then(() => { LOG.push("after"); globalThis.OUT = LOG.join(","); });
     JS
   end
+
+  # __rbHost.makeHostDeferred (the official suite's adapter) hands script the
+  # host promise's proxy itself. Passed back to the host as a settle value —
+  # §2.3.3.3.2, `rejectPromise(r)` with r a promise — it must come back as that
+  # same object, not as a realm Promise standing for the same PromiseValue.
+  def test_a_host_deferred_promise_round_trips_as_itself
+    assert_equal "reject:true,thenable reject:true,fulfill:true", out(<<~JS)
+      const r = __rbHost.makeHostDeferred();
+      r.resolve("dummy");
+      const seen = [];
+      const a = __rbHost.makeHostDeferred();
+      a.reject(r.promise);
+      a.promise.then(null, (reason) => { seen.push("reject:" + (reason === r.promise)); });
+      const b = __rbHost.makeHostDeferred();
+      b.resolve({ then(_resolve, reject) { reject(r.promise); } });
+      b.promise.then(null, (reason) => { seen.push("thenable reject:" + (reason === r.promise)); });
+      const c = __rbHost.makeHostDeferred();
+      c.resolve({ value: r.promise });
+      c.promise.then((v) => { seen.push("fulfill:" + (v.value === r.promise)); });
+      setTimeout(() => { globalThis.OUT = seen.join(","); }, 0);
+    JS
+  end
 end
