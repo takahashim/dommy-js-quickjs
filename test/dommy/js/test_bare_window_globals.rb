@@ -53,4 +53,35 @@ class Dommy::Js::TestBareWindowGlobals < Minitest::Test
     @rt.execute("innerWidth = 42")
     assert_equal 42, @rt.evaluate("innerWidth")
   end
+
+  # The bare storage globals are the window's own Storage objects.
+  def test_storage_globals_are_the_windows
+    assert_equal true, @rt.evaluate("localStorage === window.localStorage && sessionStorage === window.sessionStorage")
+    @rt.execute('localStorage.setItem("k", "v")')
+    assert_equal "v", @rt.evaluate('window.localStorage.getItem("k")')
+  end
+
+  # An opaque origin has no storage: the getters throw a SecurityError
+  # (HTML Web storage, the localStorage / sessionStorage getters, when
+  # "obtain a storage bottle map" fails; Storage Standard, "obtain a storage
+  # key" is failure for an opaque origin). The bare globals throw on read like
+  # window's own, and installing the globals does not.
+  def test_storage_globals_throw_on_an_opaque_origin_only_when_read
+    win = Dommy.parse("<html><body></body></html>")
+    win.location.__internal_set_url__("about:blank")
+    rt = Dommy::Js::Quickjs::Runtime.new
+    rt.install_window(win)
+    rt.install_browser_globals
+
+    names = rt.evaluate(<<~JS)
+      ["localStorage", "sessionStorage"].map((n) => {
+        try { globalThis[n]; return n + ":no-throw"; }
+        catch (e) { return n + ":" + e.name; }
+      }).join(",")
+    JS
+    assert_equal "localStorage:SecurityError,sessionStorage:SecurityError", names
+    assert_equal "function", rt.evaluate("typeof structuredClone"), "the rest of the globals are installed"
+  ensure
+    rt&.dispose
+  end
 end
