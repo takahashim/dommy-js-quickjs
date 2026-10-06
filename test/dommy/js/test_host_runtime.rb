@@ -26,16 +26,22 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
           calls: { getAttribute: (args) => "cls:" + args[0] }
         },
         2: {
-          // a custom element node (flagged ce) backed like a plain HTMLElement
+          // an undefined <my-el>, backed like a plain HTMLElement until upgraded
           iface: { name: "HTMLElement",
-                   chain: ["HTMLElement", "Element", "Node", "EventTarget"], ce: "my-el" },
+                   chain: ["HTMLElement", "Element", "Node", "EventTarget"] },
+          methods: [], props: {}, calls: {}
+        },
+        3: {
+          // a window's registry: a host object whose operations are JS
+          iface: { name: "CustomElementRegistry", chain: ["CustomElementRegistry"] },
           methods: [], props: {}, calls: {}
         }
-      }
+      },
+      definitions: []
     };
     globalThis.__rb_host_describe = (h) => {
       const n = __fakeHost.nodes[h];
-      return { name: n.iface.name, chain: n.iface.chain, ce: n.iface.ce, methods: n.methods };
+      return { name: n.iface.name, chain: n.iface.chain, methods: n.methods };
     };
     globalThis.__rb_host_get = (h, prop) => {
       // own props only — like Dommy's __js_get__, which returns nil for
@@ -57,7 +63,11 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
       return fn ? fn(args) : null;
     };
     globalThis.__rb_release_handle = (h) => { __fakeHost.released.push(h); };
-    globalThis.__rb_define_custom_element = () => {};   // JS-side registry is what matters here
+    // Ruby's half of define(): record the definition (registry handle, id, name)
+    // so a test can play the upgrade reaction Ruby would enqueue.
+    globalThis.__rb_define_custom_element = (registry, id, name) => {
+      __fakeHost.definitions.push({ registry, id, name });
+    };
     globalThis.__rb_construct = (name, args) => {
       if (name !== "CustomEvent") return null;            // others "not constructable"
       const h = __fakeHost.next++;
@@ -256,19 +266,46 @@ class Dommy::Js::TestHostRuntime < Minitest::Test
 
   # --- 1d construction stack (Step 0 kernel, exercised through the real runtime) ---
 
-  # `class extends HTMLElement` + upgrade: the base constructor adopts the proxy
-  # on the construction stack, so the upgraded node is an instance of the JS
-  # class and of HTMLElement, and the JS constructor ran against it.
+  # `class extends HTMLElement` + upgrade: the base constructor adopts the
+  # element on the definition's construction stack, so the upgraded node is an
+  # instance of the JS class and of HTMLElement, and the JS constructor ran
+  # against it (HTML "upgrade an element" steps 5-8, the HTML element
+  # constructor steps of [HTMLConstructor]). A registry is a host object
+  # (CustomElementRegistry) whose define() hands Ruby the definition's id; Ruby
+  # then enqueues the upgrade reaction, which calls back into
+  # __rbHost.ceUpgrade(id, handle) — played by hand here.
   def test_construction_stack_upgrade
     js_body = <<~JS
       class MyEl extends HTMLElement {
+        constructor() { super(); this.__constructed = true; }
         connectedCallback() { return "connected"; }
       }
-      customElements.define("my-el", MyEl);       // registers MyEl in the JS registry
-      const p = __rbHost.makeProxy(2);            // node 2 is flagged ce:"my-el"
-      return [p instanceof MyEl, p instanceof HTMLElement, typeof p.connectedCallback].join(",");
+      const registry = __rbHost.makeProxy(3);
+      registry.define("my-el", MyEl);            // registers MyEl in the registry's JS state
+      const def = __fakeHost.definitions[0];
+      const p = __rbHost.makeProxy(2);           // node 2 is an undefined <my-el>
+      const upgraded = __rbHost.ceUpgrade(def.id, 2);
+      return [def.registry, def.name, upgraded === undefined, registry.get("my-el") === MyEl,
+              p instanceof MyEl, p instanceof HTMLElement, typeof p.connectedCallback,
+              p.__constructed === true].join(",");
     JS
-    assert_equal "true,true,function", js(js_body)
+    assert_equal "3,my-el,true,true,true,true,function,true", js(js_body)
+  end
+
+  # The "already constructed" marker: a second super() against the same
+  # element during one upgrade is a TypeError, which ceUpgrade hands back
+  # tagged rather than throwing into Ruby.
+  def test_construction_stack_already_constructed
+    js_body = <<~JS
+      class Twice extends HTMLElement {
+        constructor() { super(); try { new Twice(); } catch (e) { this.__second = e instanceof TypeError; } }
+      }
+      __rbHost.makeProxy(3).define("my-el", Twice);
+      const p = __rbHost.makeProxy(2);
+      __rbHost.ceUpgrade(__fakeHost.definitions[0].id, 2);
+      return p.__second;
+    JS
+    assert_equal true, js(js_body)
   end
 
   # Direct `new HTMLElement()` (no construction queued) is still illegal.
