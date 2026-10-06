@@ -422,15 +422,33 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     browser&.dispose
   end
 
+  # The other side of the queued notification: a handler attached by a later
+  # script, before the "notify about rejected promises" task runs, keeps the
+  # page silent — the task skips a promise that is handled by then.
+  def test_a_handler_attached_before_the_notification_task_keeps_it_silent
+    skip_without_hook
+    browser = Dommy::Browser.new("<html><body></body></html>", strict: true)
+    browser.execute('window.p = Promise.reject(new Error("caught in time"));')
+    browser.execute("window.p.catch(function () {});")
+    browser.settle
+
+    assert_empty browser.error_log.pending
+  ensure
+    browser&.dispose
+  end
+
   def test_a_rejection_nobody_handles_still_fails
     skip_without_hook
     browser = Dommy::Browser.new("<html><body></body></html>", strict: true)
 
-    # `execute` drains the microtask queue, which ends the checkpoint the engine
-    # decides at, so the failure lands on the line that caused it.
-    error = assert_raises(Dommy::JsError) do
-      browser.execute('Promise.reject(new Error("nobody catches this"));')
-    end
+    # `execute` drains the microtask queue, which ends the checkpoint; HTML's
+    # "notify about rejected promises" then only queues a global task (DOM
+    # manipulation task source) that fires `unhandledrejection` for the
+    # promises still unhandled when it runs. So nothing has failed yet when
+    # `execute` returns — the page may still attach a handler before that task
+    # — and the failure lands on the next turn of the event loop.
+    browser.execute('Promise.reject(new Error("nobody catches this"));')
+    error = assert_raises(Dommy::JsError) { browser.settle }
     assert_includes error.message, "nobody catches this"
   ensure
     begin
