@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The bare timer globals follow the IDL: `setTimeout(handler, timeout = 0, ...arguments)` and `setInterval` hand the extra arguments to the handler, and every timer global has the IDL's `length` (`setTimeout.length` is 1, `clearTimeout.length` 0).
+- The bare forwards to window methods (`structuredClone`, `fetch`, `postMessage`, `addEventListener`, …) carry the operation's name and `length` from dommy's generated WebIDL signatures, instead of being 0-length `(...args)` wrappers.
+- `innerWidth`, `innerHeight`, `scrollX`/`scrollY`, `pageXOffset`/`pageYOffset` and `devicePixelRatio` are read from the window on each access rather than copied once at boot, and an assignment replaces them ([Replaceable]).
+- The WPT file runner boots its browser with `navigable: true`, so an `<iframe src>` loads through dommy's child navigables and the browser's resources (dommy now gives every iframe an initial `about:blank` document and navigates it from a task). `dom/nodes/Element-matches.html` and `Element-webkitMatchesSelector.html` are back to 669/669 and `ParentNode-querySelector-All.html` to 1975/1975.
+- Tests follow dommy's spec changes: a srcless or `about:blank` iframe fires `load` during `appendChild`; boot runs HTML's "the end" to the load task, so a `setTimeout(0)` queued while parsing has fired before `Dommy::Browser.new` / `Session#visit` return, even with `settle: false` (which still leaves what the load handler queued pending); an unhandled rejection fails from the queued "notify about rejected promises" task, at the next `settle`, not from `execute`; and the custom element construction-stack test defines through a `CustomElementRegistry` host object and runs `__rbHost.ceUpgrade`.
+
+### Fixed
+
+- The bare `localStorage` and `sessionStorage` globals are read from the window on each access instead of being copied at boot, so a window on an opaque origin (`about:blank`, which `Dommy::Browser.visit` starts from, `data:`, a sandboxed frame) no longer fails to install its globals with `SecurityError: Storage is disabled for an opaque origin`; the page gets that `SecurityError` when it reads them, as the HTML spec says. They are no longer enumerable own properties of the global.
+
 ## 0.11.0 — 2026-10-04
 
 Requires `dommy >= 0.15.0, < 0.16` and `quickjs ~> 0.22.0`.

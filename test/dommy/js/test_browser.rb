@@ -119,24 +119,32 @@ class Dommy::Js::TestBrowser < Minitest::Test
   end
 
   # A blank <iframe> (no src or src="about:blank") inserted into the DOM gets a
-  # real, complete nested document and fires `load` asynchronously (handler
-  # commonly attached after appendChild), like a real browser. FingerprintJS's
-  # withIframe (its font sources) appends to `iframe.contentWindow.document.body`
-  # and polls its readyState — a never-firing load + null contentWindow hung
-  # note.com's tracking plugin and its whole Nuxt hydration.
+  # real, complete nested document and fires `load` — synchronously, during
+  # the insertion: HTML 4.8.5 "process the iframe attributes" with
+  # initialInsertion true, "If url matches about:blank and initialInsertion is
+  # true, then run the iframe load event steps given element" (no task is
+  # queued, unlike every other navigation of the frame). So a handler must be
+  # attached before appendChild; one attached after it never sees this load.
+  # FingerprintJS's withIframe (its font sources) appends to
+  # `iframe.contentWindow.document.body` and polls its readyState — a
+  # never-firing load + null contentWindow hung note.com's tracking plugin and
+  # its whole Nuxt hydration.
   def test_blank_iframe_fires_load_and_has_a_usable_content_document
     html = <<~HTML
       <html><body><script>
-        window.__loaded = false;
+        window.__events = [];
         var f = document.createElement("iframe");
         f.src = "about:blank";
-        document.body.appendChild(f);          // inserted first
-        f.onload = function () { window.__loaded = true; }; // handler after
+        f.onload = function () { window.__events.push("load"); };  // handler first
+        document.body.appendChild(f);
+        window.__events.push("appended");
+        f.addEventListener("load", function () { window.__events.push("late load"); });
       </script></body></html>
     HTML
     Dommy::Browser.open(html, url: "http://x.test/") do |b|
       f = 'document.querySelector("iframe")'
-      assert_equal true, b.evaluate("window.__loaded"), "blank iframe fired load"
+      assert_equal "load,appended", b.evaluate('window.__events.join(",")'),
+        "blank iframe fired load once, during appendChild"
       assert_equal true, b.evaluate("!!#{f}.contentWindow"), "contentWindow is a real window (not null)"
       assert_equal "complete", b.evaluate("#{f}.contentWindow.document.readyState")
       # FingerprintJS-style: append + measure inside the iframe document
@@ -241,16 +249,30 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # Boot ends with HTML 13.2.7 "the end": DOMContentLoaded and load fire from
+  # tasks of their own, and the event loop is spun until the document is
+  # completely loaded — so a task the page queued BEFORE them (a setTimeout(0)
+  # from an inline script) has already run when the browser hands the page
+  # over, settle: or not. What settle: false leaves pending is the work queued
+  # from then on: here a due-now timer set by the load handler.
   def test_settle_runs_due_now_timer_work
     html = <<~HTML
       <html><body><script>
-        setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 0);
+        const note = (s) => { const d = document.body.dataset; d.order = d.order ? d.order + "," + s : s; };
+        setTimeout(() => note("parse-time timer"), 0);
+        window.addEventListener("load", () => {
+          note("load");
+          setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 0);
+        });
       </script></body></html>
     HTML
     Dommy::Browser.open(html, settle: false) do |b|
-      assert_nil b.evaluate('document.getElementById("late")'), "settle: false leaves the timer pending"
+      # Read through the Ruby DOM: `evaluate` itself drives due-now work.
+      assert_nil b.document.get_element_by_id("late"), "settle: false leaves the timer pending"
+      assert_equal "parse-time timer,load", b.document.body.get_attribute("data-order"),
+        "the end ran the task queued before the load task, then load"
       b.settle
-      refute_nil b.evaluate('document.getElementById("late")')
+      refute_nil b.document.get_element_by_id("late")
     end
   end
 

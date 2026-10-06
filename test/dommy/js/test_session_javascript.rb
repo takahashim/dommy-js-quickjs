@@ -31,8 +31,12 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
     when "/whoami"
       [200, {"content-type" => "text/plain"}, [env["HTTP_COOKIE"].to_s]]
     when "/onload"
+      # The timer is set by the load handler. One set while parsing would run
+      # before the load task, inside the visit itself (HTML "the end" spins the
+      # event loop until the document is completely loaded).
       [200, {"content-type" => "text/html"},
-       ['<html><body><script>setTimeout(() => { window.__t = "fired"; }, 0);</script></body></html>']]
+       ['<html><body><script>window.__parseTimer = "pending"; setTimeout(() => { window.__parseTimer = "fired"; }, 0);' \
+        'addEventListener("load", () => setTimeout(() => { window.__t = "fired"; }, 0));</script></body></html>']]
     when "/target"
       [200, {"content-type" => "text/html"}, ["<html><body><h1 id='target'>TARGET</h1></body></html>"]]
     when "/echo"
@@ -100,11 +104,13 @@ class Dommy::Js::TestSessionJavascript < Minitest::Test
   def test_visit_settles_by_default_and_can_opt_out
     @session = session
 
-    # settle: false leaves the due-now timer pending, so __t is never assigned —
-    # an absent property reads as JS `undefined`.
+    # settle: false leaves the on-load due-now timer pending, so __t is never
+    # assigned — an absent property reads as JS `undefined`. The page is
+    # loaded, though: HTML 13.2.7 "the end" runs the load task (and the timer
+    # queued while parsing, which comes before it) before visit returns.
     @session.visit("/onload", settle: false)
-    assert_equal "undefined", @session.evaluate_script("typeof window.__t"),
-      "settle: false observes the page mid-flight (timer not yet fired)"
+    assert_equal ["undefined", "fired"], @session.evaluate_script("[typeof window.__t, window.__parseTimer]"),
+      "settle: false observes the page mid-flight (on-load timer not yet fired)"
 
     # The default settles the page: the setTimeout(0) has fired.
     @session.visit("/onload")
