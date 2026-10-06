@@ -52,10 +52,19 @@ module Dommy
           # read `iframe.contentDocument` inside a `load` handler need static
           # `<iframe src>` frames navigated BEFORE that. We wire them, then drive
           # script boot ourselves (which fires load with the frames in place).
+          #
+          # navigable: true gives the window a navigation delegate that answers
+          # `load_frame`: an iframe's child navigable (HTML 4.8.5) starts on its
+          # initial about:blank document and navigates to its `src` from a task,
+          # fetching a network URL through that delegate — here, `resources`.
+          # Without one the frame keeps the about:blank document forever (so
+          # wire_iframes, which only fills a frame with no document, never
+          # sees it either), as the dynamically created Selectors-API frames
+          # of dom/nodes/Element-matches.html did.
           browser = ::Dommy::Browser.new(
             html, url: url, resources: resources,
             execute_scripts: false, strict: false, settle: false,
-            wasm_memory_shim: true
+            wasm_memory_shim: true, navigable: true
           )
           boot_scripts(browser, url, resources)
           harvest(browser, url, resources)
