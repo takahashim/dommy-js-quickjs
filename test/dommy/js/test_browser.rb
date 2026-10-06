@@ -249,16 +249,30 @@ class Dommy::Js::TestBrowser < Minitest::Test
     end
   end
 
+  # Boot ends with HTML 13.2.7 "the end": DOMContentLoaded and load fire from
+  # tasks of their own, and the event loop is spun until the document is
+  # completely loaded — so a task the page queued BEFORE them (a setTimeout(0)
+  # from an inline script) has already run when the browser hands the page
+  # over, settle: or not. What settle: false leaves pending is the work queued
+  # from then on: here a due-now timer set by the load handler.
   def test_settle_runs_due_now_timer_work
     html = <<~HTML
       <html><body><script>
-        setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 0);
+        const note = (s) => { const d = document.body.dataset; d.order = d.order ? d.order + "," + s : s; };
+        setTimeout(() => note("parse-time timer"), 0);
+        window.addEventListener("load", () => {
+          note("load");
+          setTimeout(() => { const p = document.createElement("p"); p.id = "late"; document.body.appendChild(p); }, 0);
+        });
       </script></body></html>
     HTML
     Dommy::Browser.open(html, settle: false) do |b|
-      assert_nil b.evaluate('document.getElementById("late")'), "settle: false leaves the timer pending"
+      # Read through the Ruby DOM: `evaluate` itself drives due-now work.
+      assert_nil b.document.get_element_by_id("late"), "settle: false leaves the timer pending"
+      assert_equal "parse-time timer,load", b.document.body.get_attribute("data-order"),
+        "the end ran the task queued before the load task, then load"
       b.settle
-      refute_nil b.evaluate('document.getElementById("late")')
+      refute_nil b.document.get_element_by_id("late")
     end
   end
 

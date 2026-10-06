@@ -149,7 +149,11 @@ class Dommy::Js::TestExceptionReporting < Minitest::Test
     HTML
     browser = Dommy::Browser.new(html, strict: false, settle: false)
 
-    assert_equal "threw,next script", browser.document.title,
+    # The timer runs only after every parser-inserted script: from the event
+    # loop that HTML 13.2.7 "the end" spins until the document is completely
+    # loaded (its task was queued before the load task), even with settle:
+    # false — never between two scripts.
+    assert_equal "threw,next script,timer", browser.document.title,
       "the timer is still pending when the last script runs"
   ensure
     browser&.dispose
