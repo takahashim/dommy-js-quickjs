@@ -84,4 +84,11 @@ class Dommy::Js::TestBareWindowGlobals < Minitest::Test
   ensure
     rt&.dispose
   end
+
+  # A top-level window has no container, so the bare frameElement is null,
+  # like window.frameElement.
+  def test_bare_frame_element_reads_the_window
+    assert_equal true, @rt.evaluate("frameElement === null && frameElement === window.frameElement")
+  end
+
 end
