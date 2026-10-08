@@ -96,8 +96,14 @@ module Dommy
         @bundle_cache = {}
         @bundle_mutex = Mutex.new
 
+        # A bundle runs for its side effects, so its completion value is
+        # discarded (the trailing `void 0`, on a line of its own so a final
+        # line comment cannot swallow it). Whatever its last statement
+        # evaluated to would otherwise be converted to a Ruby value on every
+        # VM — for window_builtins.js, whose last statement assigns
+        # `window.globalThis`, the entire global object.
         def self.compiled_bundle(cache_key, source)
-          @bundle_mutex.synchronize { @bundle_cache[cache_key] ||= compile(source, filename: cache_key.to_s) }
+          @bundle_mutex.synchronize { @bundle_cache[cache_key] ||= compile("#{source}\n;void 0;", filename: cache_key.to_s) }
         end
 
         # Execute precompiled bytecode (a Quickjs::Runnable) on this VM in global
