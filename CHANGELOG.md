@@ -4,8 +4,14 @@
 
 Requires `dommy >= 0.16.0, < 0.17` and `quickjs ~> 0.22.0`.
 
+### Added
+
+- A bare `frameElement` global, read from the window on each access (a frame's container can change). It is a plain readonly attribute, so unlike the [Replaceable] ones below an assignment does not replace it.
+
 ### Changed
 
+- Requires `dommy >= 0.16.0, < 0.17` (was `>= 0.15.0, < 0.16`). dommy 0.16.0 needs makiri 0.16.0 and changes what `Session#click_link` and `#click_button` return; the suite passes against it, and the boot-cost bound below needs its lazy interface seeding.
+- The realm's bootstrap bundles no longer hand their completion value to Ruby. `window_builtins.js` ends by assigning `window.globalThis`, so every page load converted the whole global object to a Ruby value: 184 host reads and about 6 ms. `Backend#run_bundle` now discards it (the compiled bundle ends with `void 0`). `test/dommy/js/test_window_boot.rb` checks that lazily seeded interfaces resolve like eager ones and bounds the bridge crossings of opening a window (`install_window` under 60; it was 424).
 - The bare timer globals follow the IDL: `setTimeout(handler, timeout = 0, ...arguments)` and `setInterval` hand the extra arguments to the handler, and every timer global has the IDL's `length` (`setTimeout.length` is 1, `clearTimeout.length` 0).
 - The bare forwards to window methods (`structuredClone`, `fetch`, `postMessage`, `addEventListener`, …) carry the operation's name and `length` from dommy's generated WebIDL signatures, instead of being 0-length `(...args)` wrappers.
 - `innerWidth`, `innerHeight`, `scrollX`/`scrollY`, `pageXOffset`/`pageYOffset` and `devicePixelRatio` are read from the window on each access rather than copied once at boot, and an assignment replaces them ([Replaceable]).
