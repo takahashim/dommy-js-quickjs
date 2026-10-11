@@ -47,6 +47,28 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
     assert_equal([false, false], @h.evaluate("[globalThis === window, globalThis === self]"))
   end
 
+  # A global the page made is the window's property of that name, so reading,
+  # rewriting and testing for it through the window (testharness.js goes
+  # through `self`) stays in JS.
+  def test_a_page_global_reached_through_the_window_does_not_cross_into_ruby
+    previous = ENV.fetch("DOMMY_JS_BRIDGE_PROFILE", nil)
+    ENV["DOMMY_JS_BRIDGE_PROFILE"] = "1"
+    h = Dommy::Js::BrowserHarness.new
+    h.runtime.load_script("var lib = { n: 0 }; function helper() {}")
+    h.runtime.reset_bridge_crossing_counts
+    assert_equal(true, h.evaluate(<<~JS))
+      (() => {
+        for (let i = 0; i < 100; i++) { self.lib.n++; window.helper(); }
+        self.lib = { n: 100 }; window.helper = function () {};
+        return "lib" in self && "helper" in window && lib.n === 100;
+      })()
+    JS
+    assert_equal(0, h.runtime.bridge_crossing_counts.sum { |_, counts| counts["__total__"].to_i })
+  ensure
+    h&.dispose
+    previous ? ENV["DOMMY_JS_BRIDGE_PROFILE"] = previous : ENV.delete("DOMMY_JS_BRIDGE_PROFILE")
+  end
+
   # self, parent and frames are [Replaceable]: an assignment replaces the
   # global with the value. top is [LegacyUnforgeable] and keeps the window.
   def test_self_parent_and_frames_are_replaceable_and_top_is_not
