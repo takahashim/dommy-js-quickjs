@@ -91,15 +91,58 @@ class Dommy::Js::TestImageData < Minitest::Test
     JS
   end
 
-  # The host keeps a delivered ImageData after every proxy of it is gone; what
-  # the page wrote through one comes back through the next.
-  def test_writes_to_a_delivered_image_data_outlive_its_proxies
+  # The host keeps a delivered ImageData after every proxy of it is gone (the
+  # GC runs, and the finalizers with it); what the page wrote through one comes
+  # back through the next. An ImageData sent before anything read its `data`
+  # has no pixels in the record, and is the receiver's all the same.
+  def assert_write_outlives_the_proxies(send, written_before:)
+    @h.execute("img.data[0] = 9;") if written_before
     @h.execute(<<~JS)
-      window.onmessage = (e) => { globalThis.kept = e; e.data.data[3] = 7; };
-      window.postMessage(img, "*");
+      globalThis.receive = (e) => { globalThis.kept = e; e.data.data[3] = 7; };
+      #{send}
     JS
     @h.pump
-    assert_equal(7, @h.evaluate("kept.data.data[3]"))
+    @h.runtime.collect_garbage
+    @h.pump
+    assert_equal([written_before ? 9 : 0, 7], @h.evaluate("[kept.data.data[0], kept.data.data[3]]"))
+  end
+
+  WINDOW_MESSAGE = 'window.onmessage = receive; window.postMessage(img, "*");'
+  CHANNEL_MESSAGE = "const c = new MessageChannel(); c.port2.onmessage = receive; c.port1.postMessage(img);"
+
+  def test_a_write_to_an_unread_image_data_sent_by_post_message_outlives_its_proxies
+    assert_write_outlives_the_proxies(WINDOW_MESSAGE, written_before: false)
+  end
+
+  def test_a_write_to_a_written_image_data_sent_by_post_message_outlives_its_proxies
+    assert_write_outlives_the_proxies(WINDOW_MESSAGE, written_before: true)
+  end
+
+  def test_a_write_to_an_unread_image_data_sent_through_a_channel_outlives_its_proxies
+    assert_write_outlives_the_proxies(CHANNEL_MESSAGE, written_before: false)
+  end
+
+  def test_a_write_to_a_written_image_data_sent_through_a_channel_outlives_its_proxies
+    assert_write_outlives_the_proxies(CHANNEL_MESSAGE, written_before: true)
+  end
+
+  # One record deserialized for two receivers gives each its own ImageData and
+  # pixels, and each keeps its write.
+  def test_a_broadcast_gives_each_receiver_its_own_pixels
+    @h.execute(<<~JS)
+      img.data[0] = 9;
+      globalThis.got = [];
+      const a = new BroadcastChannel("px"), b = new BroadcastChannel("px"), sender = new BroadcastChannel("px");
+      a.onmessage = (e) => { globalThis.ea = e; e.data.data[3] = 1; };
+      b.onmessage = (e) => { globalThis.eb = e; e.data.data[3] = 2; };
+      sender.postMessage(img);
+    JS
+    @h.pump
+    @h.runtime.collect_garbage
+    @h.pump
+    assert_equal([9, 1, 9, 2, false], @h.evaluate(<<~JS))
+      [ea.data.data[0], ea.data.data[3], eb.data.data[0], eb.data.data[3], ea.data === eb.data]
+    JS
   end
 
   # A clone of an ImageData whose data was never read is transparent black.
