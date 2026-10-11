@@ -55,7 +55,6 @@ class Dommy::Js::TestImageData < Minitest::Test
   # An ImageData sent by message or kept as history state arrives with the
   # pixels written before sending, and the receiver's `data` is one live buffer.
   def test_window_post_message_carries_the_pixels
-    skip "dommy keeps ImageData pixels per JS proxy, so a deserialized ImageData loses them"
     @h.execute(<<~JS)
       img.data[0] = 9;
       window.onmessage = (e) => {
@@ -70,7 +69,6 @@ class Dommy::Js::TestImageData < Minitest::Test
   end
 
   def test_message_channel_carries_the_pixels
-    skip "dommy keeps ImageData pixels per JS proxy, so a deserialized ImageData loses them"
     @h.execute(<<~JS)
       img.data[0] = 9;
       const { port1, port2 } = new MessageChannel();
@@ -82,7 +80,6 @@ class Dommy::Js::TestImageData < Minitest::Test
   end
 
   def test_history_state_carries_the_pixels
-    skip "dommy keeps ImageData pixels per JS proxy, so a deserialized ImageData loses them"
     assert_equal([9, true, 0], @h.evaluate(<<~JS))
       (() => {
         img.data[0] = 9;
@@ -92,6 +89,17 @@ class Dommy::Js::TestImageData < Minitest::Test
         return [s.data[0], s.data === history.state.data, img.data[0]];
       })()
     JS
+  end
+
+  # The host keeps a delivered ImageData after every proxy of it is gone; what
+  # the page wrote through one comes back through the next.
+  def test_writes_to_a_delivered_image_data_outlive_its_proxies
+    @h.execute(<<~JS)
+      window.onmessage = (e) => { globalThis.kept = e; e.data.data[3] = 7; };
+      window.postMessage(img, "*");
+    JS
+    @h.pump
+    assert_equal(7, @h.evaluate("kept.data.data[3]"))
   end
 
   # A clone of an ImageData whose data was never read is transparent black.
