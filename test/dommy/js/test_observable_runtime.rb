@@ -56,4 +56,41 @@ class Dommy::Js::TestObservableRuntime < Minitest::Test
       })()
     JS
   end
+
+  # Closing a sync iterator on abort runs inside abort(), so what return()
+  # throws comes out of the abort() that a promise-returning operator's
+  # signal took, and out of a Subscriber's complete() — but only after the
+  # observers have heard the completion. When take(1) completes inside the
+  # source's loop it ends up reported, after the completion (as in Chrome).
+  def test_closing_a_sync_iterator_throws_to_what_closed_it
+    @rt.evaluate(<<~JS)
+      globalThis.log = [];
+      addEventListener("error", (e) => log.push("reported " + e.error.message));
+      globalThis.closing = (name, onNext) => ({
+        [Symbol.iterator]() {
+          let i = 0;
+          return {
+            next: () => { i++; if (onNext) onNext(i); return { value: i, done: false }; },
+            return: () => { throw new Error(name); },
+          };
+        },
+      });
+      const caught = (fn) => { try { fn(); log.push("returned"); } catch (e) { log.push("threw " + e.message); } };
+
+      const controller = new AbortController();
+      Observable.from(closing("toArray", (i) => { if (i === 3) caught(() => controller.abort("why")); }))
+        .toArray({ signal: controller.signal })
+        .catch((reason) => log.push("rejected " + reason));
+
+      new Observable((subscriber) => {
+        Observable.from(closing("complete")).subscribe({ next() { caught(() => subscriber.complete()); } }, { signal: subscriber.signal });
+      }).subscribe({ complete: () => log.push("completed") });
+
+      Observable.from(closing("take")).take(1).subscribe({ complete: () => log.push("take completed") });
+    JS
+    assert_equal(
+      ["threw toArray", "completed", "threw complete", "take completed", "reported take", "rejected why"],
+      @rt.evaluate("log"),
+    )
+  end
 end
