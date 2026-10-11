@@ -9,7 +9,7 @@ require_relative "../../support/wpt_conformance"
 # says whether that implementation is the spec's — and the baseline that a
 # refactor of it has to keep.
 #
-# The expected failures fall into three groups:
+# The expected failures fall into four groups:
 #
 #   * Detached documents. Dommy has no document detachment, so every subtest
 #     that subscribes inside one (the whole of each `.window.js` file below)
@@ -17,8 +17,17 @@ require_relative "../../support/wpt_conformance"
 #     dropped, so the day detachment is modeled the gap is visible here.
 #   * The microtask in which forEach's visitor-callback rejection lands.
 #   * takeUntil's notifier erroring twice: where the second error is reported.
+#   * On a quickjs without the JS rejection hook (the released gem), the two
+#     from() subtests that read `event.reason` of an unhandled rejection: the
+#     reason the page gets there is not the value the page rejected with.
 class Dommy::Js::TestWptObservableFiles < Minitest::Test
   include Dommy::Js::WptConformance
+
+  REJECTION_HOOK = ::Quickjs::VM.method_defined?(:promise_rejection_hook=)
+  FROM_NEEDS_REJECTION_HOOK = [
+    "from(): Async iterable: `Iterator#return()` must return an Object, or a Promise rejects asynchronously",
+    "from(): Async iterable: error thrown from IteratorRecord#return() is wrapped in rejected Promise",
+  ].freeze
 
   wpt_files(
     "dom/observable/tentative/observable-catch.any.js" => { min_pass: 9, expected: [] },
@@ -45,7 +54,8 @@ class Dommy::Js::TestWptObservableFiles < Minitest::Test
       "forEach()'s internal observer's next steps do not crash in a detached document",
       "forEach()'s internal observer's next steps do not crash when visitor callback detaches the document",
     ] },
-    "dom/observable/tentative/observable-from.any.js" => { min_pass: 48, expected: [] },
+    "dom/observable/tentative/observable-from.any.js" =>
+      REJECTION_HOOK ? { min_pass: 48, expected: [] } : { min_pass: 46, expected: FROM_NEEDS_REJECTION_HOOK },
     "dom/observable/tentative/observable-inspect.any.js" => { min_pass: 13, expected: [] },
     "dom/observable/tentative/observable-last.any.js" => { min_pass: 5, expected: [] },
     "dom/observable/tentative/observable-map.any.js" => { min_pass: 6, expected: [] },
