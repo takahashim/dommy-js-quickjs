@@ -4,8 +4,8 @@ require "test_helper"
 require_relative "../../support/wpt_conformance"
 
 # Real WPT `html/` files, run through WptRunner. Covers the History interface
-# (pushState / replaceState), accessKeyLabel, and ARIA attribute reflection —
-# the well-supported corners of the HTML suite.
+# (pushState / replaceState), the Location interface, accessKeyLabel, and ARIA
+# attribute reflection — the well-supported corners of the HTML suite.
 #
 # Omitted: XML/foreign-document corners. (ARIA element-reference reflection —
 # including shadow-DOM valid-scope validation — is now supported.)
@@ -13,6 +13,7 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
   include Dommy::Js::WptConformance
 
   HISTORY = "html/browsers/history/the-history-interface"
+  LOCATION = "html/browsers/history/the-location-interface"
 
   wpt_files(
     # --- History interface ----------------------------------------------
@@ -23,6 +24,15 @@ class Dommy::Js::TestWptHtmlFiles < Minitest::Test
     "#{HISTORY}/history_replacestate_err.html" => { min_pass: 1, expected: [] },
     "#{HISTORY}/history_replacestate_nooptionalparam.html" => { min_pass: 1, expected: [] },
     "#{HISTORY}/history_state.html" => { min_pass: 1, expected: [] },
+    # --- Location interface ---------------------------------------------
+    "#{LOCATION}/location_host.html" => { min_pass: 1, expected: [] },
+    "#{LOCATION}/location_hostname.html" => { min_pass: 1, expected: [] },
+    "#{LOCATION}/location_href.html" => { min_pass: 1, expected: [] },
+    "#{LOCATION}/location_origin.html" => { min_pass: 1, expected: [] },
+    "#{LOCATION}/location_pathname.html" => { min_pass: 1, expected: [] },
+    "#{LOCATION}/location_protocol.html" => { min_pass: 1, expected: [] },
+    "#{LOCATION}/location-prototype-no-toString-valueOf.html" => { min_pass: 4, expected: [] },
+    "#{LOCATION}/location-tojson.html" => { min_pass: 1, expected: [] },
 
     # --- HTML semantics --------------------------------------------------
     "html/semantics/forms/the-button-element/button-type.html" => { min_pass: 2, expected: [] },
