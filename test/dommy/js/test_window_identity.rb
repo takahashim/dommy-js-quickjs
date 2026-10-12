@@ -62,6 +62,19 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
     JS
   end
 
+  # A property defined on the window is a global: the bare name resolves to it.
+  def test_a_property_defined_on_the_window_is_a_global
+    assert_equal([1, 1, 2, 3, true], @h.evaluate(<<~JS))
+      (() => {
+        Object.defineProperty(self, "definedValue", { value: 1, configurable: true });
+        Object.defineProperty(window, "definedGetter", { get() { return 2; }, configurable: true });
+        Object.defineProperty(window, "definedConstant", { value: 3 });
+        return [definedValue, self.definedValue, definedGetter, definedConstant,
+                Object.getOwnPropertyDescriptor(window, "definedConstant").configurable === false];
+      })()
+    JS
+  end
+
   # A global the page made is the window's property of that name, so reading,
   # rewriting and testing for it through the window (testharness.js goes
   # through `self`) stays in JS.
