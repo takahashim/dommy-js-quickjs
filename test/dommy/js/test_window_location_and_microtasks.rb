@@ -23,8 +23,9 @@ class Dommy::Js::TestWindowLocationAndMicrotasks < Minitest::Test
     browser&.dispose
   end
 
-  # window.queueMicrotask runs a JS callback as a microtask, and what it
-  # throws is reported at the window rather than lost.
+  # window.queueMicrotask, and the bare one, run a JS callback as a
+  # microtask, and what it throws is reported at the window rather than lost
+  # (or left as an unhandled rejection).
   def test_window_queue_microtask_runs_the_callback_and_reports_its_throw
     browser = Dommy::Browser.new(<<~HTML, url: "http://localhost/", strict: false)
       <!DOCTYPE html><body><script>
@@ -32,11 +33,12 @@ class Dommy::Js::TestWindowLocationAndMicrotasks < Minitest::Test
         addEventListener("error", (e) => { log.push("reported " + e.error.message); e.preventDefault(); });
         window.queueMicrotask(() => log.push("window"));
         self.queueMicrotask(() => { throw new Error("boom"); });
+        queueMicrotask(() => { throw new Error("bare"); });
         Promise.resolve().then(() => log.push("promise"));
       </script></body>
     HTML
     browser.settle
-    assert_equal ["window", "reported boom", "promise"], browser.evaluate("log")
+    assert_equal ["window", "reported boom", "reported bare", "promise"], browser.evaluate("log")
   ensure
     browser&.dispose
   end

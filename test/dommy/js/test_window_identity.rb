@@ -221,4 +221,41 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
       })()
     JS
   end
+
+  # A Window member saved before the page wraps it — through the bare name,
+  # globalThis or the window — is still the original, as a saved native
+  # function is in a browser: calling it does not call the wrapper back.
+  def test_a_saved_window_member_survives_a_wrapper_around_it
+    assert_equal(%w[object number ok object object], @h.evaluate(<<~JS))
+      (() => {
+        const results = [];
+        const savedFetch = fetch;
+        window.fetch = (...args) => savedFetch(...args);
+        results.push(typeof window.fetch("data:,x"));
+        const savedSetTimeout = setTimeout;
+        window.setTimeout = (callback, delay) => savedSetTimeout(callback, delay);
+        results.push(typeof window.setTimeout(() => {}, 0));
+        const savedAdd = addEventListener;
+        window.addEventListener = function (...args) { return savedAdd.call(this, ...args); };
+        window.addEventListener("x", () => {});
+        results.push("ok");
+        const fromGlobal = globalThis.fetch;
+        globalThis.fetch = (...args) => fromGlobal(...args);
+        results.push(typeof fetch("data:,x"));
+        const fromWindow = window.fetch;
+        window.fetch = (...args) => fromWindow(...args);
+        results.push(typeof fetch("data:,x"));
+        return results;
+      })()
+    JS
+  end
+
+  # The window's member is the bare global itself, and its descriptor says so.
+  def test_a_window_member_is_the_bare_global_and_its_descriptor
+    assert_equal([true, true, true, true], @h.evaluate(<<~JS))
+      (() => [window.fetch === fetch, window.setTimeout === setTimeout,
+              Object.getOwnPropertyDescriptor(window, "fetch").value === window.fetch,
+              Object.getOwnPropertyDescriptors(window).setTimeout.value === window.setTimeout])()
+    JS
+  end
 end
