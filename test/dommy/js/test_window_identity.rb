@@ -97,6 +97,41 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
     previous ? ENV["DOMMY_JS_BRIDGE_PROFILE"] = previous : ENV.delete("DOMMY_JS_BRIDGE_PROFILE")
   end
 
+  # window and document are [LegacyUnforgeable], and history, navigator,
+  # crypto, indexedDB and caches plain readonly attributes: assigning the bare
+  # name keeps the window's object (a strict-mode script gets a TypeError).
+  # performance and screen are [Replaceable], so an assignment replaces them.
+  def test_the_window_readonly_attributes_ignore_an_assignment
+    names = %w[window document history navigator crypto indexedDB caches]
+    assert_equal(names.to_h { |n| [n, true] }.merge("strict" => "TypeError", "performance" => 1, "screen" => 2),
+                 @h.evaluate(<<~JS))
+      (() => {
+        const result = {};
+        for (const name of #{names.to_json}) {
+          const before = globalThis[name];
+          (0, eval)(name + " = 1");
+          result[name] = globalThis[name] === before;
+        }
+        try { (0, eval)("'use strict'; document = 1"); result.strict = "no error"; } catch (e) { result.strict = e.name; }
+        (0, eval)("performance = 1; screen = 2");
+        result.performance = performance; result.screen = screen;
+        return result;
+      })()
+    JS
+  end
+
+  # Interface objects are not enumerable properties of the global (WebIDL).
+  def test_interface_objects_are_not_enumerable_globals
+    assert_equal([false, false, false, false], @h.evaluate(<<~JS))
+      (() => {
+        Node; // built
+        const keys = Object.keys(globalThis);
+        return [keys.includes("Node"), keys.includes("HTMLDivElement"), keys.includes("Image"),
+                Object.prototype.propertyIsEnumerable.call(globalThis, "Node")];
+      })()
+    JS
+  end
+
   # self, parent and frames are [Replaceable]: an assignment replaces the
   # global with the value. top is [LegacyUnforgeable] and keeps the window.
   def test_self_parent_and_frames_are_replaceable_and_top_is_not
