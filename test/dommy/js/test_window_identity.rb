@@ -47,6 +47,21 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
     assert_equal([false, false], @h.evaluate("[globalThis === window, globalThis === self]"))
   end
 
+  # The window's own properties include the globals the page made, so walking
+  # the window's keys (a leak check over `Object.keys(self)`) finds them, and
+  # one deleted through the window is gone from the keys too.
+  def test_the_window_lists_the_page_globals_among_its_own_keys
+    @h.runtime.load_script("var pageVar = 1; function pageFn() {}")
+    assert_equal([true, true, true, false], @h.evaluate(<<~JS))
+      (() => {
+        const forIn = []; for (const k in self) forIn.push(k);
+        globalThis.gone = 1; delete window.gone;
+        return [Object.keys(self).includes("pageVar"), Object.keys(window).includes("pageFn"),
+                forIn.includes("pageVar"), Object.keys(self).includes("gone")];
+      })()
+    JS
+  end
+
   # A global the page made is the window's property of that name, so reading,
   # rewriting and testing for it through the window (testharness.js goes
   # through `self`) stays in JS.
