@@ -122,12 +122,13 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
 
   # Interface objects are not enumerable properties of the global (WebIDL).
   def test_interface_objects_are_not_enumerable_globals
-    assert_equal([false, false, false, false], @h.evaluate(<<~JS))
+    assert_equal([false, false, false, false, []], @h.evaluate(<<~JS))
       (() => {
         Node; // built
         const keys = Object.keys(globalThis);
         return [keys.includes("Node"), keys.includes("HTMLDivElement"), keys.includes("Image"),
-                Object.prototype.propertyIsEnumerable.call(globalThis, "Node")];
+                Object.prototype.propertyIsEnumerable.call(globalThis, "Node"),
+                ["CustomStateSet", "Observable", "Subscriber"].filter((name) => keys.includes(name))];
       })()
     JS
   end
@@ -139,6 +140,84 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
       (() => {
         self = 1; parent = 2; frames = 3; top = 4;
         return [self, parent, frames, top === window];
+      })()
+    JS
+  end
+
+  # A Window member replaced through either name is replaced for both, as on a
+  # real window, where the two are one object: a page wrapping window.fetch
+  # sees its own bare fetch() calls, and a mock planted with defineProperty
+  # answers window.matchMedia.
+  def test_a_replaced_window_member_is_the_same_through_either_name
+    assert_equal([true, true, true, true, "fake", "fake"], @h.evaluate(<<~JS))
+      (() => {
+        const f = () => "f";
+        window.fetch = f;
+        const g = () => 0;
+        globalThis.setTimeout = g;
+        Object.defineProperty(window, "matchMedia", { value: () => "fake", writable: true, configurable: true });
+        return [fetch === f, window.fetch === f, setTimeout === g, window.setTimeout === g,
+                matchMedia(), window.matchMedia()];
+      })()
+    JS
+  end
+
+  # One the page has not replaced still runs the window's.
+  def test_an_unreplaced_window_member_runs_the_windows
+    assert_equal(%w[hi hi], @h.evaluate('[atob("aGk="), window.atob("aGk=")]'))
+  end
+
+  # A global defined non-configurable through the window keeps one value
+  # through every name, across assignments and a redefinition.
+  def test_a_non_configurable_global_keeps_one_value
+    assert_equal([[3, 3, 3], [5, 5]], @h.evaluate(<<~JS))
+      (() => {
+        Object.defineProperty(window, "pinned", { value: 1, writable: true });
+        globalThis.pinned = 2;
+        window.pinned = 3;
+        const assigned = [pinned, window.pinned, globalThis.pinned];
+        Object.defineProperty(window, "pinned", { value: 5 });
+        return [assigned, [pinned, window.pinned]];
+      })()
+    JS
+  end
+
+  # An accessor defined on the window runs with the window as `this`.
+  def test_an_accessor_defined_on_the_window_sees_the_window
+    assert_equal(true, @h.evaluate(<<~JS))
+      (() => {
+        Object.defineProperty(window, "seenThis", { get() { return this === window; }, configurable: true });
+        return window.seenThis;
+      })()
+    JS
+  end
+
+  # The window's own keys leave out the bridge's internal names, and a window
+  # cannot be made non-extensible (HTML's WindowProxy [[PreventExtensions]]
+  # returns false), so walking its keys keeps working.
+  def test_the_window_keys_leave_out_the_bridge_and_the_window_stays_extensible
+    assert_equal([false, true, "TypeError", false, true], @h.evaluate(<<~JS))
+      (() => {
+        let error = null;
+        try { Object.preventExtensions(window); } catch (e) { error = e.constructor.name; }
+        return [Object.getOwnPropertyNames(window).some((k) => k.startsWith("__rb")),
+                Object.keys(window).includes("fetch"), error, Reflect.preventExtensions(window),
+                Object.keys(window).length > 0];
+      })()
+    JS
+  end
+
+  # A global deleted through the window and made again under the bare name is
+  # the window's again; a Window member deleted through the window stays gone.
+  def test_a_deleted_global_made_again_is_the_windows
+    assert_equal([[2, true, true], ["undefined", false]], @h.evaluate(<<~JS))
+      (() => {
+        window.remade = 1;
+        delete window.remade;
+        globalThis.remade = 2;
+        const remade = [window.remade, "remade" in window, Object.keys(window).includes("remade")];
+        delete window.Event;
+        return [remade, [typeof window.Event, "Event" in window]];
       })()
     JS
   end

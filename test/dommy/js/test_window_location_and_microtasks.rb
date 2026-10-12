@@ -40,4 +40,14 @@ class Dommy::Js::TestWindowLocationAndMicrotasks < Minitest::Test
   ensure
     browser&.dispose
   end
+
+  # Its argument is a VoidFunction: anything else is a TypeError.
+  def test_window_queue_microtask_rejects_a_non_function
+    browser = Dommy::Browser.new("<!DOCTYPE html><body></body>", url: "http://localhost/")
+    assert_equal "TypeError", browser.evaluate(<<~JS)
+      (() => { try { window.queueMicrotask(1); return "none"; } catch (e) { return e.constructor.name; } })()
+    JS
+  ensure
+    browser&.dispose
+  end
 end
