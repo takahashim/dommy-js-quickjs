@@ -44,7 +44,7 @@ class Dommy::Js::TestBrowserHarness < Minitest::Test
 
   # Browser bare-globals are wired (install_browser_globals).
   def test_browser_globals_installed
-    assert_equal true, @h.evaluate("self === globalThis")
+    assert_equal true, @h.evaluate("self === window")
     assert_equal "function", @h.evaluate("typeof fetch")
     assert_equal "function", @h.evaluate("typeof CSS.escape")
     assert_equal "http://localhost/", @h.evaluate("location.href")
