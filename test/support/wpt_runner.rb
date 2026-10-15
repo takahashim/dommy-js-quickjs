@@ -238,9 +238,7 @@ module Dommy
 
         # Resolve a possibly-relative iframe src against the test's URL.
         def resolve_url(base_url, src)
-          ::URI.join(base_url, src).to_s
-        rescue ::URI::Error
-          src
+          ::Dommy::URL.parse(src, base_url)&.href || src
         end
       end
     end
