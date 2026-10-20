@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "uri"
-
 module Dommy
   module Js
     # Wraps a Resources adapter to apply the wptserve `?pipe=` query — the
@@ -30,15 +28,15 @@ module Dommy
 
       # Pull `pipe=…` out of the query, returning [pipe_string_or_nil, url_without_pipe].
       def extract_pipe(url)
-        uri = URI.parse(url.to_s)
+        uri = Dommy::Internal::UrlParser.parse(url.to_s)
         params = (uri.query || "").split("&")
         pipe_param = params.find { |p| p.start_with?("pipe=") }
         return [nil, url] unless pipe_param
 
         uri.query = (params - [pipe_param]).join("&")
         uri.query = nil if uri.query.empty?
-        [form_decode(pipe_param.delete_prefix("pipe=")), uri.to_s]
-      rescue URI::InvalidURIError
+        [form_decode(pipe_param.delete_prefix("pipe=")), Dommy::Internal::UrlParser.serialize(uri)]
+      rescue Dommy::Internal::UrlParser::Failure
         [nil, url]
       end
 
@@ -84,7 +82,7 @@ module Dommy
         uri = parse(url)
         return nil unless uri
 
-        case ::File.basename(uri.path)
+        case ::File.basename(Dommy::Internal::UrlParser.serialize_path(uri))
         when "status.py" then status_py(uri, url)
         when "inspect-headers.py" then inspect_headers_py(uri, headers, url)
         when "redirect.py" then redirect_py(uri, url)
@@ -98,9 +96,10 @@ module Dommy
 
       private
 
+      # The URL record of `url`, or nil when it does not parse.
       def parse(url)
-        URI.parse(url.to_s)
-      rescue URI::InvalidURIError
+        Dommy::Internal::UrlParser.parse(url.to_s)
+      rescue Dommy::Internal::UrlParser::Failure
         nil
       end
 
