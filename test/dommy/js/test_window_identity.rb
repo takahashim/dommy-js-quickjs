@@ -102,7 +102,7 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
   # name keeps the window's object (a strict-mode script gets a TypeError).
   # performance and screen are [Replaceable], so an assignment replaces them.
   def test_the_window_readonly_attributes_ignore_an_assignment
-    names = %w[window document history navigator crypto indexedDB caches]
+    names = %w[window document history navigator crypto]
     assert_equal(names.to_h { |n| [n, true] }.merge("strict" => "TypeError", "performance" => 1, "screen" => 2),
                  @h.evaluate(<<~JS))
       (() => {
@@ -116,6 +116,19 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
         (0, eval)("performance = 1; screen = 2");
         result.performance = performance; result.screen = screen;
         return result;
+      })()
+    JS
+  end
+
+  # A readonly attribute the window has no object for (dommy implements
+  # neither indexedDB nor caches) is no global, so feature detection sees it
+  # missing and a page's polyfill takes its place.
+  def test_a_missing_window_object_is_left_for_a_polyfill
+    assert_equal([false, false, "fake", "fake"], @h.evaluate(<<~JS))
+      (() => {
+        const missing = ["indexedDB" in globalThis, "caches" in globalThis];
+        (0, eval)("'use strict'; globalThis.indexedDB = 'fake'; globalThis.caches = 'fake'");
+        return [...missing, indexedDB, caches];
       })()
     JS
   end
