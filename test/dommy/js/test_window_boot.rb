@@ -43,6 +43,15 @@ class Dommy::Js::TestWindowBoot < Minitest::Test
     JS
   end
 
+  # URL's [LegacyWindowAlias]: the same interface object, as non-enumerable
+  # as the interface object's own global.
+  def test_webkit_url_is_url
+    assert_equal "true,true,false", @rt.evaluate(<<~JS)
+      const d = Object.getOwnPropertyDescriptor(globalThis, "webkitURL");
+      return [webkitURL === URL, new webkitURL("http://a.test/") instanceof URL, d.enumerable].join(",");
+    JS
+  end
+
   def test_assigning_a_global_before_it_is_built_replaces_it
     assert_equal 1, @rt.evaluate(<<~JS)
       globalThis.HTMLMarqueeElement = 1;
