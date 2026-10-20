@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 — 2026-10-20
+
+Requires `dommy >= 0.17.0, < 0.18` and `quickjs ~> 0.22.0`.
+
+### Changed
+
+- Requires `dommy >= 0.17.0, < 0.18` (was `>= 0.16.0, < 0.17`). dommy 0.17.0 requires makiri `~> 0.16.0`.
+- The bare `self`, `top`, `parent` and `frames` are the window: `self === window` and `top === window` hold. `self`, `parent` and `frames` are [Replaceable]; `top` is readonly, so assigning it in strict code throws.
+- An assignment to the bare `location` navigates, as `window.location = url` does.
+- The bare `history`, `navigator` and `crypto` are readonly: `history = 1` leaves the window's History, and throws in strict code. `indexedDB` and `caches`, which dommy does not implement, are not globals, so `"indexedDB" in globalThis` is false and a page can define its own.
+- A bare global that forwards to the window (`fetch`, `setTimeout`, `localStorage`, …) reaches the window's own member: replacing `window.fetch` replaces the bare `fetch`, and a wrapper that calls a saved `fetch` calls the original instead of itself.
+- The bare `queueMicrotask` reports what its callback throws at the window (`reportError`), as `window.queueMicrotask` does, instead of rejecting a promise nobody holds.
 
 ### Fixed
 
