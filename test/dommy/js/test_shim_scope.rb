@@ -11,7 +11,7 @@ class Dommy::Js::TestShimScope < Minitest::Test
     I group NumberFormat DateTimeFormat Collator PluralRules RelativeTimeFormat ListFormat
     unsupported throwUnsupported
     __rbDefer __rbTimerOrigins __rbTimerForward __rbTimerMember
-    __rbForward __rbMember __rbLocationWindow __rbLocation __rbWindowOperation __rbForwardWindowMethod
+    __rbForward __rbMember __rbReplaceable __rbLocationWindow __rbLocation __rbWindowOperation __rbForwardWindowMethod
   ].freeze
 
   def setup

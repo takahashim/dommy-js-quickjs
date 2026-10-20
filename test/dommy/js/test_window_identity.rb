@@ -102,7 +102,7 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
   # name keeps the window's object (a strict-mode script gets a TypeError).
   # performance and screen are [Replaceable], so an assignment replaces them.
   def test_the_window_readonly_attributes_ignore_an_assignment
-    names = %w[window document history navigator crypto indexedDB caches]
+    names = %w[window document history navigator crypto]
     assert_equal(names.to_h { |n| [n, true] }.merge("strict" => "TypeError", "performance" => 1, "screen" => 2),
                  @h.evaluate(<<~JS))
       (() => {
@@ -116,6 +116,19 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
         (0, eval)("performance = 1; screen = 2");
         result.performance = performance; result.screen = screen;
         return result;
+      })()
+    JS
+  end
+
+  # A readonly attribute the window has no object for (dommy implements
+  # neither indexedDB nor caches) is no global, so feature detection sees it
+  # missing and a page's polyfill takes its place.
+  def test_a_missing_window_object_is_left_for_a_polyfill
+    assert_equal([false, false, "fake", "fake"], @h.evaluate(<<~JS))
+      (() => {
+        const missing = ["indexedDB" in globalThis, "caches" in globalThis];
+        (0, eval)("'use strict'; globalThis.indexedDB = 'fake'; globalThis.caches = 'fake'");
+        return [...missing, indexedDB, caches];
       })()
     JS
   end
@@ -136,10 +149,12 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
   # self, parent and frames are [Replaceable]: an assignment replaces the
   # global with the value. top is [LegacyUnforgeable] and keeps the window.
   def test_self_parent_and_frames_are_replaceable_and_top_is_not
-    assert_equal([1, 2, 3, true], @h.evaluate(<<~JS))
+    assert_equal([1, 2, 3, true, "TypeError"], @h.evaluate(<<~JS))
       (() => {
         self = 1; parent = 2; frames = 3; top = 4;
-        return [self, parent, frames, top === window];
+        let strict;
+        try { (0, eval)("'use strict'; top = 5"); strict = "no error"; } catch (e) { strict = e.name; }
+        return [self, parent, frames, top === window, strict];
       })()
     JS
   end
