@@ -126,6 +126,23 @@ class Dommy::Js::TestImageData < Minitest::Test
     assert_write_outlives_the_proxies(CHANNEL_MESSAGE, written_before: true)
   end
 
+  # An ImageData the page hands the host as a value it keeps (a MessageEvent's
+  # data) keeps what the page wrote, before handing it over and after, once
+  # its proxies are gone.
+  def test_an_image_data_the_host_keeps_keeps_its_pixels
+    @h.execute(<<~JS)
+      img.data[0] = 9;
+      globalThis.ev = new MessageEvent("m", { data: img });
+      img.data[3] = 7;
+      ctx.putImageData(img, 0, 0);
+      globalThis.img = null;
+    JS
+    @h.pump
+    @h.runtime.collect_garbage
+    @h.pump
+    assert_equal([9, 7], @h.evaluate("[ev.data.data[0], ev.data.data[3]]"))
+  end
+
   # One record deserialized for two receivers gives each its own ImageData and
   # pixels, and each keeps its write.
   def test_a_broadcast_gives_each_receiver_its_own_pixels
