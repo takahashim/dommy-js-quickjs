@@ -30,6 +30,26 @@ class Dommy::Js::TestObservableRuntime < Minitest::Test
     JS
   end
 
+  # from() of a sync iterable closes the iterator when the subscription is
+  # aborted; what return() throws, or a result that is not an object, is
+  # reported, since nothing that could catch it is on the stack.
+  def test_from_reports_what_closing_the_iterator_throws
+    assert_equal(["closing", "Iterator#return() must return an Object"], @rt.evaluate(<<~JS))
+      (() => {
+        const reported = [];
+        window.addEventListener("error", (e) => reported.push(e.error && e.error.message));
+        const iterable = (onReturn) => ({
+          [Symbol.iterator]() { return { next: () => ({ value: 1, done: false }), return: onReturn }; },
+        });
+        for (const onReturn of [() => { throw new Error("closing"); }, () => 1]) {
+          const controller = new AbortController();
+          Observable.from(iterable(onReturn)).subscribe({ next: () => controller.abort() }, { signal: controller.signal });
+        }
+        return reported;
+      })()
+    JS
+  end
+
   # drop() reads the same conversion: dropping NaN drops nothing.
   def test_drop_converts_its_count_like_webidl
     assert_equal([[1, 2, 3], [1, 2, 3], [], [2, 3]], @rt.evaluate(<<~JS))
