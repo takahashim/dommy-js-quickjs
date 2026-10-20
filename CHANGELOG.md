@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The shims (`browser_globals.js`, `timer_globals.js`, `intl_polyfill.js`, `wasm_stub.js`) no longer declare their helpers at the top level of the page's realm. A page's own top-level `let group`, `class Collator` or `let __rbDefer` was a redeclaration SyntaxError, and a page's `let __rbTimerOrigins` made every bare `setTimeout` throw `TypeError: not a function`. Each shim now runs in an IIFE; the timers keep their origin map in a local. `test/dommy/js/test_shim_scope.rb` declares every former helper name from a page.
+
 ## 0.12.0 — 2026-10-10
 
 Requires `dommy >= 0.16.0, < 0.17` and `quickjs ~> 0.22.0`.
