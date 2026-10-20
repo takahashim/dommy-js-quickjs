@@ -136,10 +136,12 @@ class Dommy::Js::TestWindowIdentity < Minitest::Test
   # self, parent and frames are [Replaceable]: an assignment replaces the
   # global with the value. top is [LegacyUnforgeable] and keeps the window.
   def test_self_parent_and_frames_are_replaceable_and_top_is_not
-    assert_equal([1, 2, 3, true], @h.evaluate(<<~JS))
+    assert_equal([1, 2, 3, true, "TypeError"], @h.evaluate(<<~JS))
       (() => {
         self = 1; parent = 2; frames = 3; top = 4;
-        return [self, parent, frames, top === window];
+        let strict;
+        try { (0, eval)("'use strict'; top = 5"); strict = "no error"; } catch (e) { strict = e.name; }
+        return [self, parent, frames, top === window, strict];
       })()
     JS
   end
